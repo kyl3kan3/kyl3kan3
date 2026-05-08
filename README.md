@@ -21,10 +21,24 @@ Apply `db/schema.sql` to a Neon database, then set `DATABASE_URL` in `.env.local
 
 The app is build-safe without `DATABASE_URL`; it falls back to demo data until Neon is configured.
 
+`INBOUND_WEBHOOK_SECRET` is optional during development. When set, inbound webhook calls must include either `Authorization: Bearer <secret>` or `x-webhook-secret: <secret>`.
+
+## Functional surface
+
+- Live Neon-backed dashboard metrics, ticket queue, team load, and incident stream.
+- Manual ticket intake with priority, team, owner, reporter, and description fields.
+- Ticket status, priority, team, and owner updates from the console.
+- Ticket comments and timeline refresh.
+- Inbound alert webhook that normalizes alert/email payloads, deduplicates incidents, creates or updates tickets, and records raw alerts.
+
 ## API
 
 - `GET /api/health`
+- `GET /api/dashboard`
 - `GET /api/tickets`
+- `POST /api/tickets`
+- `PATCH /api/tickets/:id`
+- `POST /api/tickets/:id/comments`
 - `POST /api/webhooks/inbound-email`
 
 ## Checks

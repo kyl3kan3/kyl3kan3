@@ -105,7 +105,30 @@ function slaMinutes(priority: Priority) {
   return 240;
 }
 
+function isAuthorized(request: Request) {
+  const expected = process.env.INBOUND_WEBHOOK_SECRET?.trim();
+
+  if (!expected) {
+    return true;
+  }
+
+  const authorization = request.headers.get("authorization") ?? "";
+  const bearer = authorization.startsWith("Bearer ")
+    ? authorization.slice("Bearer ".length).trim()
+    : "";
+  const headerSecret = request.headers.get("x-webhook-secret")?.trim() ?? "";
+
+  return bearer === expected || headerSecret === expected;
+}
+
 export async function POST(request: Request) {
+  if (!isAuthorized(request)) {
+    return NextResponse.json(
+      { ok: false, error: "Invalid webhook secret" },
+      { status: 401 },
+    );
+  }
+
   if (!hasDatabaseUrl()) {
     return NextResponse.json(
       { ok: false, error: "DATABASE_URL is not configured" },

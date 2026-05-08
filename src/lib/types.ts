@@ -1,5 +1,3 @@
-import type { LucideIcon } from "lucide-react";
-
 export type Priority = "P1" | "P2" | "P3" | "P4";
 
 export type TicketStatus =
@@ -13,18 +11,34 @@ export type TicketStatus =
 
 export type TicketQueueItem = {
   id: string;
+  incidentId: string | null;
   ticketNumber: string;
   title: string;
+  description: string | null;
   status: TicketStatus;
   priority: Priority;
   importanceScore: number;
   urgencyScore: number;
+  assignedUserId: string | null;
+  assignedTeamId: string | null;
   assignee: string;
   team: string;
   reporterEmail: string | null;
   slaDueAt: string | null;
+  createdAt: string;
   updatedAt: string;
+  createdFrom: string;
   duplicateCount: number;
+  comments: TicketComment[];
+};
+
+export type TicketComment = {
+  id: string;
+  ticketId: string;
+  authorEmail: string | null;
+  body: string;
+  createdVia: "ui" | "email" | "sms" | "system";
+  createdAt: string;
 };
 
 export type IncidentSnapshot = {
@@ -48,11 +62,26 @@ export type TeamLoad = {
 };
 
 export type OpsMetric = {
+  key: "openTickets" | "p1Incidents" | "slaBreaches" | "avgAge";
   label: string;
   value: string;
   detail: string;
-  icon: LucideIcon;
   tone: string;
+};
+
+export type TeamOption = {
+  id: string;
+  name: string;
+  members: number;
+  onCall: number;
+};
+
+export type UserOption = {
+  id: string;
+  email: string;
+  fullName: string | null;
+  role: "reporter" | "agent" | "manager" | "admin";
+  teamIds: string[];
 };
 
 export type DashboardData = {
@@ -62,5 +91,7 @@ export type DashboardData = {
   tickets: TicketQueueItem[];
   incidents: IncidentSnapshot[];
   teamLoad: TeamLoad[];
+  teams: TeamOption[];
+  users: UserOption[];
   dbError?: string;
 };

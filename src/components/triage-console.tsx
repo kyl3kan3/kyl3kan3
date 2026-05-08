@@ -23,8 +23,8 @@ import {
   Users,
   XCircle,
 } from "lucide-react";
-import { useMemo, useState, useTransition } from "react";
-import type { FormEvent, ReactNode } from "react";
+import { useMemo, useRef, useState, useTransition } from "react";
+import type { FormEvent, ReactNode, RefObject } from "react";
 import type {
   DashboardData,
   OpsMetric,
@@ -131,6 +131,11 @@ function isActive(ticket: TicketQueueItem) {
   return ticket.status !== "resolved" && ticket.status !== "closed";
 }
 
+function isBreachedTicket(ticket: TicketQueueItem, nowMs: number) {
+  if (!ticket.slaDueAt || !isActive(ticket)) return false;
+  return new Date(ticket.slaDueAt).getTime() < nowMs;
+}
+
 function ticketMatchesSearch(ticket: TicketQueueItem, query: string) {
   const haystack = [
     ticket.ticketNumber,
@@ -187,16 +192,19 @@ function TextField({
   value,
   onChange,
   placeholder,
+  inputRef,
 }: {
   labelText: string;
   value: string;
   onChange: (value: string) => void;
   placeholder: string;
+  inputRef?: RefObject<HTMLInputElement | null>;
 }) {
   return (
     <label className="grid min-w-0 gap-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-stone-500">
       {labelText}
       <input
+        ref={inputRef}
         value={value}
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
@@ -206,13 +214,26 @@ function TextField({
   );
 }
 
-function MetricCard({ metric }: { metric: OpsMetric }) {
+function MetricCard({
+  metric,
+  onActivate,
+  active,
+}: {
+  metric: OpsMetric;
+  onActivate: () => void;
+  active: boolean;
+}) {
   const Icon = metricIcons[metric.key];
   const accent = metricAccent[metric.key];
 
   return (
-    <div
-      className={`surface-card group relative overflow-hidden p-5 transition duration-300 hover:-translate-y-0.5 hover:shadow-[0_18px_40px_-22px_rgba(20,14,5,0.35)] ring-1 ${accent.ring}`}
+    <button
+      type="button"
+      onClick={onActivate}
+      aria-pressed={active}
+      className={`surface-card group relative overflow-hidden p-5 text-left transition duration-300 hover:-translate-y-0.5 hover:shadow-[0_18px_40px_-22px_rgba(20,14,5,0.35)] ring-1 ${accent.ring} ${
+        active ? "outline outline-2 outline-offset-2 outline-stone-950" : ""
+      }`}
     >
       <div
         className={`pointer-events-none absolute -right-12 -top-12 h-40 w-40 rounded-full bg-gradient-to-br ${accent.glow} opacity-70 blur-2xl transition duration-500 group-hover:opacity-90`}
@@ -235,7 +256,7 @@ function MetricCard({ metric }: { metric: OpsMetric }) {
       <p className="relative mt-4 border-t border-stone-200/70 pt-3 text-sm leading-5 text-stone-500">
         {metric.detail}
       </p>
-    </div>
+    </button>
   );
 }
 
@@ -250,10 +271,7 @@ function TicketListItem({
   nowMs: number;
   onSelect: () => void;
 }) {
-  const slaDate = ticket.slaDueAt ? new Date(ticket.slaDueAt) : null;
-  const isBreached = slaDate
-    ? slaDate.getTime() < nowMs && isActive(ticket)
-    : false;
+  const isBreached = isBreachedTicket(ticket, nowMs);
 
   return (
     <button
@@ -357,9 +375,16 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
   const [priorityFilter, setPriorityFilter] = useState<"all" | Priority>("all");
   const [statusFilter, setStatusFilter] = useState<FilterStatus>("active");
   const [teamFilter, setTeamFilter] = useState("all");
+  const [showBreachedOnly, setShowBreachedOnly] = useState(false);
   const [comment, setComment] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const queueRef = useRef<HTMLElement | null>(null);
+  const detailRef = useRef<HTMLElement | null>(null);
+  const intakeRef = useRef<HTMLElement | null>(null);
+  const teamRef = useRef<HTMLElement | null>(null);
+  const setupRef = useRef<HTMLElement | null>(null);
+  const manualTitleRef = useRef<HTMLInputElement | null>(null);
   const [draft, setDraft] = useState({
     title: "",
     description: "",
@@ -372,6 +397,75 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
   const nowMs = new Date(data.refreshedAt).getTime();
   const activeTickets = data.tickets.filter(isActive).length;
   const isLive = data.source === "database";
+  const breachedTickets = data.tickets.filter((ticket) =>
+    isBreachedTicket(ticket, nowMs),
+  ).length;
+
+  function scrollToSection(ref: RefObject<HTMLElement | null>) {
+    ref.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  function resetFilters() {
+    setQuery("");
+    setPriorityFilter("all");
+    setStatusFilter("active");
+    setTeamFilter("all");
+    setShowBreachedOnly(false);
+  }
+
+  function activateMetric(metricKey: OpsMetric["key"]) {
+    if (metricKey === "openTickets") {
+      resetFilters();
+    }
+
+    if (metricKey === "p1Incidents") {
+      setQuery("");
+      setPriorityFilter("P1");
+      setStatusFilter("active");
+      setTeamFilter("all");
+      setShowBreachedOnly(false);
+    }
+
+    if (metricKey === "slaBreaches") {
+      setQuery("");
+      setPriorityFilter("all");
+      setStatusFilter("active");
+      setTeamFilter("all");
+      setShowBreachedOnly(true);
+    }
+
+    if (metricKey === "avgAge") {
+      setStatusFilter("active");
+      setShowBreachedOnly(false);
+    }
+
+    scrollToSection(queueRef);
+  }
+
+  function focusManualIntake() {
+    scrollToSection(intakeRef);
+    window.setTimeout(() => manualTitleRef.current?.focus(), 300);
+  }
+
+  async function copyText(value: string, labelText: string) {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(value);
+      } else {
+        const textArea = document.createElement("textarea");
+        textArea.value = value;
+        textArea.style.position = "fixed";
+        textArea.style.opacity = "0";
+        document.body.appendChild(textArea);
+        textArea.select();
+        document.execCommand("copy");
+        document.body.removeChild(textArea);
+      }
+      setNotice(`${labelText} copied`);
+    } catch {
+      setNotice(`${labelText}: ${value}`);
+    }
+  }
 
   const filteredTickets = useMemo(() => {
     return data.tickets.filter((ticket) => {
@@ -386,13 +480,22 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
       if (priorityFilter !== "all" && ticket.priority !== priorityFilter) {
         return false;
       }
+      if (showBreachedOnly && !isBreachedTicket(ticket, nowMs)) return false;
       if (teamFilter !== "all" && ticket.assignedTeamId !== teamFilter) {
         return false;
       }
       if (query && !ticketMatchesSearch(ticket, query)) return false;
       return true;
     });
-  }, [data.tickets, priorityFilter, query, statusFilter, teamFilter]);
+  }, [
+    data.tickets,
+    nowMs,
+    priorityFilter,
+    query,
+    showBreachedOnly,
+    statusFilter,
+    teamFilter,
+  ]);
 
   const selectedTicket =
     filteredTickets.find((ticket) => ticket.id === selectedId) ??
@@ -424,6 +527,42 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
         setNotice(error instanceof Error ? error.message : "Something went wrong");
       }
     });
+  }
+
+  async function checkHealth() {
+    const response = await fetch("/api/health", { cache: "no-store" });
+    const result = (await response.json()) as {
+      ok?: boolean;
+      database?: string;
+      error?: string;
+    };
+
+    if (!response.ok || !result.ok) {
+      throw new Error(result.error ?? "Health check failed");
+    }
+
+    return `Health ok: database ${result.database ?? "unknown"}`;
+  }
+
+  function copyWebhookUrl() {
+    void copyText(
+      `${window.location.origin}/api/webhooks/inbound-email`,
+      "Webhook URL",
+    );
+  }
+
+  function copyWebhookExample() {
+    const payload = {
+      source: "monitor",
+      id: "alert-123",
+      from: "alerts@example.com",
+      subject: "Checkout latency above threshold",
+      body: "Customer-facing checkout latency is breaching SLA.",
+      service: "checkout-api",
+      severity: "critical",
+    };
+
+    void copyText(JSON.stringify(payload, null, 2), "Webhook example");
   }
 
   async function patchTicket(ticketId: string, payload: Record<string, unknown>) {
@@ -509,34 +648,70 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
       <div className="grid min-h-screen lg:grid-cols-[80px_minmax(0,1fr)]">
         <aside className="sidebar-ink hidden text-white lg:flex lg:flex-col lg:items-center lg:justify-between lg:py-6">
           <div className="grid gap-3">
-            <div className="relative flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-200 via-amber-100 to-stone-50 text-stone-900 shadow-lg ring-1 ring-black/10">
+            <button
+              type="button"
+              onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+              className="relative flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-200 via-amber-100 to-stone-50 text-stone-900 shadow-lg ring-1 ring-black/10 transition hover:scale-105"
+              aria-label="Scroll to overview"
+              title="Overview"
+            >
               <Bell className="h-5 w-5" />
               <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-emerald-400 ring-2 ring-[#181614] ring-pulse" />
-            </div>
+            </button>
             <div className="mt-3 grid gap-2">
-              {[Inbox, Activity, Database, Users].map((Icon, index) => (
-                <button
-                  key={index}
-                  type="button"
-                  className={`group relative flex h-11 w-11 items-center justify-center rounded-xl transition ${
-                    index === 0
-                      ? "bg-white text-stone-900 shadow-md ring-1 ring-white/40"
-                      : "text-stone-300 hover:bg-white/10 hover:text-white"
-                  }`}
-                >
-                  {index === 0 ? (
-                    <span className="absolute -left-3 top-1/2 h-6 -translate-y-1/2 rounded-r-full bg-amber-300 w-1" />
-                  ) : null}
-                  <Icon className="h-5 w-5" />
-                </button>
-              ))}
+              <button
+                type="button"
+                onClick={() => scrollToSection(queueRef)}
+                className="group relative flex h-11 w-11 items-center justify-center rounded-xl bg-white text-stone-900 shadow-md ring-1 ring-white/40 transition hover:bg-amber-100"
+                aria-label="Go to queue"
+                title="Queue"
+              >
+                <span className="absolute -left-3 top-1/2 h-6 w-1 -translate-y-1/2 rounded-r-full bg-amber-300" />
+                <Inbox className="h-5 w-5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => scrollToSection(detailRef)}
+                className="group relative flex h-11 w-11 items-center justify-center rounded-xl text-stone-300 transition hover:bg-white/10 hover:text-white"
+                aria-label="Go to detail"
+                title="Detail"
+              >
+                <Activity className="h-5 w-5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => scrollToSection(setupRef)}
+                className="group relative flex h-11 w-11 items-center justify-center rounded-xl text-stone-300 transition hover:bg-white/10 hover:text-white"
+                aria-label="Go to setup"
+                title="Setup"
+              >
+                <Database className="h-5 w-5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => scrollToSection(teamRef)}
+                className="group relative flex h-11 w-11 items-center justify-center rounded-xl text-stone-300 transition hover:bg-white/10 hover:text-white"
+                aria-label="Go to teams"
+                title="Teams"
+              >
+                <Users className="h-5 w-5" />
+              </button>
             </div>
           </div>
           <div className="grid gap-3">
             <div className="flex h-2 w-2 items-center justify-center self-center rounded-full bg-emerald-400 ring-pulse" />
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-[11px] font-semibold tracking-wide text-stone-200">
+            <button
+              type="button"
+              onClick={() => {
+                resetFilters();
+                scrollToSection(queueRef);
+              }}
+              className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-[11px] font-semibold tracking-wide text-stone-200 transition hover:border-amber-300 hover:text-amber-200"
+              aria-label="Reset filters"
+              title="Reset filters"
+            >
               K3
-            </div>
+            </button>
           </div>
         </aside>
 
@@ -544,9 +719,14 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
           <header className="glass-header sticky top-0 z-20 border-b border-stone-200/70">
             <div className="mx-auto flex max-w-[1540px] flex-col gap-4 px-4 py-4 sm:px-6 xl:flex-row xl:items-center xl:justify-between xl:px-10">
               <div className="flex min-w-0 items-center gap-4">
-                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-stone-900 to-stone-700 text-white shadow-md ring-1 ring-black/10 lg:hidden">
+                <button
+                  type="button"
+                  onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+                  className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-stone-900 to-stone-700 text-white shadow-md ring-1 ring-black/10 lg:hidden"
+                  aria-label="Scroll to overview"
+                >
                   <Bell className="h-5 w-5" />
-                </div>
+                </button>
                 <div className="min-w-0">
                   <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-stone-500">
                     Alert Triage
@@ -557,7 +737,9 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
                 </div>
               </div>
               <div className="grid w-[calc(100vw-2rem)] max-w-full grid-cols-1 gap-2 sm:flex sm:w-full sm:flex-wrap sm:items-center xl:w-auto">
-                <span
+                <button
+                  type="button"
+                  onClick={() => runMutation(checkHealth)}
                   className={`inline-flex h-10 items-center justify-center gap-2 rounded-full border px-3.5 text-[12.5px] font-semibold ${
                     isLive
                       ? "border-emerald-200 bg-emerald-50 text-emerald-800"
@@ -571,11 +753,15 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
                   />
                   <ShieldCheck className="h-4 w-4" />
                   {isLive ? "Neon live" : "Demo data"}
-                </span>
-                <span className="inline-flex h-10 items-center justify-center gap-2 rounded-full border border-stone-200 bg-white/80 px-3.5 text-[12.5px] font-semibold text-stone-700 backdrop-blur">
+                </button>
+                <button
+                  type="button"
+                  onClick={() => scrollToSection(setupRef)}
+                  className="inline-flex h-10 items-center justify-center gap-2 rounded-full border border-stone-200 bg-white/80 px-3.5 text-[12.5px] font-semibold text-stone-700 backdrop-blur transition hover:bg-white"
+                >
                   <Layers3 className="h-4 w-4 text-amber-600" />
                   Integrations pending
-                </span>
+                </button>
                 <button
                   type="button"
                   onClick={() =>
@@ -594,12 +780,36 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
           <section className="mx-auto max-w-[1540px] px-4 py-6 sm:px-6 xl:px-10">
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
               {data.metrics.map((metric) => (
-                <MetricCard key={metric.key} metric={metric} />
+                <MetricCard
+                  key={metric.key}
+                  metric={
+                    metric.key === "slaBreaches"
+                      ? { ...metric, value: String(breachedTickets) }
+                      : metric
+                  }
+                  active={
+                    (metric.key === "openTickets" &&
+                      statusFilter === "active" &&
+                      priorityFilter === "all" &&
+                      teamFilter === "all" &&
+                      !showBreachedOnly &&
+                      !query) ||
+                    (metric.key === "p1Incidents" &&
+                      priorityFilter === "P1" &&
+                      !showBreachedOnly) ||
+                    (metric.key === "slaBreaches" && showBreachedOnly)
+                  }
+                  onActivate={() => activateMetric(metric.key)}
+                />
               ))}
             </div>
 
             <div className="mt-6 grid gap-5 xl:grid-cols-[400px_minmax(0,1fr)_360px]">
-              <section className="surface-card overflow-hidden">
+              <section
+                id="triage-queue"
+                ref={queueRef}
+                className="surface-card scroll-mt-24 overflow-hidden"
+              >
                 <div className="border-b border-stone-200/70 bg-gradient-to-b from-stone-50 to-white p-5">
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex min-w-0 items-center gap-3">
@@ -675,12 +885,7 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
                     <div className="flex items-end">
                       <button
                         type="button"
-                        onClick={() => {
-                          setQuery("");
-                          setPriorityFilter("all");
-                          setStatusFilter("active");
-                          setTeamFilter("all");
-                        }}
+                        onClick={resetFilters}
                         className="btn-soft inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg px-3 text-sm font-semibold"
                       >
                         <SlidersHorizontal className="h-4 w-4" />
@@ -688,6 +893,16 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
                       </button>
                     </div>
                   </div>
+                  {showBreachedOnly ? (
+                    <button
+                      type="button"
+                      onClick={() => setShowBreachedOnly(false)}
+                      className="mt-3 inline-flex h-8 items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 text-xs font-semibold text-red-700"
+                    >
+                      <XCircle className="h-4 w-4" />
+                      SLA breaches only
+                    </button>
+                  ) : null}
                 </div>
                 <div className="fancy-scroll max-h-[calc(100vh-360px)] min-h-[360px] overflow-y-auto">
                   {filteredTickets.length > 0 ? (
@@ -706,7 +921,11 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
                 </div>
               </section>
 
-              <section className="surface-card overflow-hidden">
+              <section
+                id="ticket-detail"
+                ref={detailRef}
+                className="surface-card scroll-mt-24 overflow-hidden"
+              >
                 {selectedTicket ? (
                   <div>
                     <div className="hero-ink relative overflow-hidden border-b border-black/40 px-6 py-6 text-white">
@@ -1047,7 +1266,11 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
               </section>
 
               <aside className="space-y-5">
-                <section className="surface-card p-5">
+                <section
+                  id="manual-intake"
+                  ref={intakeRef}
+                  className="surface-card scroll-mt-24 p-5"
+                >
                   <div className="mb-4 flex items-center justify-between">
                     <div>
                       <h2 className="text-[15px] font-semibold tracking-tight text-stone-950">
@@ -1057,13 +1280,20 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
                         Create a live ticket
                       </p>
                     </div>
-                    <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-stone-900 to-stone-700 text-white shadow-md ring-1 ring-black/10">
+                    <button
+                      type="button"
+                      onClick={focusManualIntake}
+                      className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-stone-900 to-stone-700 text-white shadow-md ring-1 ring-black/10 transition hover:scale-105"
+                      aria-label="Focus manual intake"
+                      title="New ticket"
+                    >
                       <Plus className="h-4 w-4" />
-                    </div>
+                    </button>
                   </div>
                   <form onSubmit={createManualTicket} className="space-y-3">
                     <TextField
                       labelText="Title"
+                      inputRef={manualTitleRef}
                       value={draft.title}
                       onChange={(value) =>
                         setDraft((next) => ({ ...next, title: value }))
@@ -1154,7 +1384,11 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
                   </form>
                 </section>
 
-                <section className="surface-card p-5">
+                <section
+                  id="team-load"
+                  ref={teamRef}
+                  className="surface-card scroll-mt-24 p-5"
+                >
                   <div className="mb-4 flex items-center justify-between">
                     <h2 className="text-[15px] font-semibold tracking-tight text-stone-950">
                       Team load
@@ -1175,8 +1409,24 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
                           : width > 50
                             ? "from-amber-400 to-amber-600"
                             : "from-stone-700 to-stone-900";
+                      const teamOption = data.teams.find(
+                        (item) => item.name === team.team,
+                      );
                       return (
-                        <div key={team.team}>
+                        <button
+                          key={team.team}
+                          type="button"
+                          onClick={() => {
+                            if (teamOption) {
+                              setTeamFilter(teamOption.id);
+                              setStatusFilter("active");
+                              setPriorityFilter("all");
+                              setShowBreachedOnly(false);
+                              scrollToSection(queueRef);
+                            }
+                          }}
+                          className="w-full rounded-xl p-2 text-left transition hover:bg-stone-50"
+                        >
                           <div className="mb-2 flex items-center justify-between text-[13px]">
                             <span className="font-semibold tracking-tight text-stone-900">
                               {team.team}
@@ -1191,13 +1441,17 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
                               style={{ width: `${width}%` }}
                             />
                           </div>
-                        </div>
+                        </button>
                       );
                     })}
                   </div>
                 </section>
 
-                <section className="relative overflow-hidden rounded-2xl border border-amber-200/70 bg-gradient-to-br from-amber-50 via-amber-100/70 to-amber-50 p-5 text-amber-950 shadow-[0_8px_24px_-16px_rgba(180,83,9,0.4)]">
+                <section
+                  id="setup"
+                  ref={setupRef}
+                  className="scroll-mt-24 relative overflow-hidden rounded-2xl border border-amber-200/70 bg-gradient-to-br from-amber-50 via-amber-100/70 to-amber-50 p-5 text-amber-950 shadow-[0_8px_24px_-16px_rgba(180,83,9,0.4)]"
+                >
                   <div className="pointer-events-none absolute -right-10 -top-10 h-32 w-32 rounded-full bg-amber-300/40 blur-2xl" />
                   <div className="relative flex items-center gap-3">
                     <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-300 to-amber-500 text-amber-950 shadow-md ring-1 ring-amber-600/20">
@@ -1211,6 +1465,32 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
                         Provider webhooks & API keys
                       </p>
                     </div>
+                  </div>
+                  <div className="mt-4 grid gap-2">
+                    <button
+                      type="button"
+                      onClick={copyWebhookUrl}
+                      className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-zinc-950 px-3 text-sm font-semibold text-white shadow-sm"
+                    >
+                      <Send className="h-4 w-4" />
+                      Copy webhook URL
+                    </button>
+                    <button
+                      type="button"
+                      onClick={copyWebhookExample}
+                      className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-amber-200 bg-white px-3 text-sm font-semibold text-amber-900 shadow-sm"
+                    >
+                      <Layers3 className="h-4 w-4" />
+                      Copy test payload
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => runMutation(checkHealth)}
+                      className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-amber-200 bg-white px-3 text-sm font-semibold text-amber-900 shadow-sm"
+                    >
+                      <ShieldCheck className="h-4 w-4" />
+                      Check database
+                    </button>
                   </div>
                 </section>
               </aside>

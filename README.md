@@ -92,7 +92,6 @@ create table incidents (
   urgency_score int not null default 0,
   priority text not null check (priority in ('P1','P2','P3','P4')),
   confidence numeric(5,2),
-  blast_count int not null default 1,
   first_seen_at timestamptz not null,
   last_seen_at timestamptz not null,
   created_at timestamptz not null default now(),
@@ -243,32 +242,7 @@ Use a weighted additive score, then map to a P-level.
 - `POST /api/incidents/:id/merge`
 - `POST /api/notifications/send`
 
-## 9) Push to Vercel + Neon (first deploy checklist)
-
-1. Create a Neon project and copy the pooled connection string.
-2. Import this repo into Vercel (Git provider or `vercel` CLI).
-3. Add env vars in Vercel project settings:
-   - `DATABASE_URL`
-   - `INBOUND_EMAIL_WEBHOOK_SECRET`
-   - `EMAIL_PROVIDER_API_KEY`
-4. Run schema SQL against Neon (Neon SQL editor or migration tool).
-5. Configure inbound email webhook target:
-   - `https://<your-vercel-domain>/api/webhooks/inbound-email`
-6. Deploy and send a sample alert email.
-7. Validate records in `alert_events`, `incidents`, and `tickets` tables.
-
-## 10) 404 NOT_FOUND troubleshooting
-
-If Vercel returns `404: NOT_FOUND`, check the following in order:
-
-1. Confirm the route exists in the app (for Next.js App Router: `app/api/webhooks/inbound-email/route.ts`).
-2. Confirm method is implemented (`POST` for inbound webhook).
-3. Confirm the webhook points to the exact deployed domain and path.
-4. Confirm you are testing the latest deployment, not a deleted/old preview URL.
-5. Confirm middleware/rewrites are not intercepting `/api/*`.
-6. In Vercel deployment logs, verify route registration includes the webhook path.
-
-## 11) Next implementation steps
+## 9) Next implementation steps
 
 1. Scaffold Next.js app routes and Neon connection layer.
 2. Implement inbound email webhook verification and parsing.
@@ -276,3 +250,4 @@ If Vercel returns `404: NOT_FOUND`, check the following in order:
 4. Create ticket lifecycle endpoints and queue UI.
 5. Add routing rules evaluator and assignment worker.
 6. Add audit logging for all state changes.
+

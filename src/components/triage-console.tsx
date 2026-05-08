@@ -45,28 +45,28 @@ const statuses: TicketStatus[] = [
   "closed",
 ];
 
-const priorityTone: Record<Priority, string> = {
-  P1: "border-red-500 bg-red-600 text-white",
-  P2: "border-amber-300 bg-amber-300 text-zinc-950",
-  P3: "border-sky-300 bg-sky-100 text-sky-800",
-  P4: "border-emerald-300 bg-emerald-100 text-emerald-800",
+const priorityClass: Record<Priority, string> = {
+  P1: "priority-p1",
+  P2: "priority-p2",
+  P3: "priority-p3",
+  P4: "priority-p4",
 };
 
 const priorityRail: Record<Priority, string> = {
-  P1: "bg-red-500",
-  P2: "bg-amber-400",
-  P3: "bg-sky-400",
-  P4: "bg-emerald-400",
+  P1: "priority-rail-p1",
+  P2: "priority-rail-p2",
+  P3: "priority-rail-p3",
+  P4: "priority-rail-p4",
 };
 
 const statusTone: Record<TicketStatus, string> = {
-  new: "bg-fuchsia-50 text-fuchsia-700 ring-fuchsia-200",
-  triaged: "bg-sky-50 text-sky-700 ring-sky-200",
-  assigned: "bg-indigo-50 text-indigo-700 ring-indigo-200",
-  in_progress: "bg-amber-50 text-amber-800 ring-amber-200",
-  waiting: "bg-zinc-100 text-zinc-700 ring-zinc-200",
-  resolved: "bg-emerald-50 text-emerald-700 ring-emerald-200",
-  closed: "bg-zinc-100 text-zinc-500 ring-zinc-200",
+  new: "bg-fuchsia-50 text-fuchsia-700 ring-1 ring-fuchsia-200/80",
+  triaged: "bg-sky-50 text-sky-700 ring-1 ring-sky-200/80",
+  assigned: "bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200/80",
+  in_progress: "bg-amber-50 text-amber-800 ring-1 ring-amber-200/80",
+  waiting: "bg-stone-100 text-stone-700 ring-1 ring-stone-200/80",
+  resolved: "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200/80",
+  closed: "bg-stone-100 text-stone-500 ring-1 ring-stone-200/80",
 };
 
 const metricIcons: Record<OpsMetric["key"], typeof RadioTower> = {
@@ -76,11 +76,34 @@ const metricIcons: Record<OpsMetric["key"], typeof RadioTower> = {
   avgAge: Gauge,
 };
 
-const metricAccent: Record<OpsMetric["key"], string> = {
-  openTickets: "border-sky-200 bg-sky-50 text-sky-700",
-  p1Incidents: "border-red-200 bg-red-50 text-red-700",
-  slaBreaches: "border-amber-200 bg-amber-50 text-amber-800",
-  avgAge: "border-emerald-200 bg-emerald-50 text-emerald-700",
+const metricAccent: Record<
+  OpsMetric["key"],
+  { ring: string; glow: string; icon: string; label: string }
+> = {
+  openTickets: {
+    ring: "ring-sky-200/70",
+    glow: "from-sky-100 via-white to-white",
+    icon: "bg-gradient-to-br from-sky-500 to-sky-700 text-white",
+    label: "text-sky-700",
+  },
+  p1Incidents: {
+    ring: "ring-red-200/70",
+    glow: "from-red-100 via-white to-white",
+    icon: "bg-gradient-to-br from-red-500 to-red-700 text-white",
+    label: "text-red-700",
+  },
+  slaBreaches: {
+    ring: "ring-amber-200/70",
+    glow: "from-amber-100 via-white to-white",
+    icon: "bg-gradient-to-br from-amber-400 to-amber-600 text-white",
+    label: "text-amber-700",
+  },
+  avgAge: {
+    ring: "ring-emerald-200/70",
+    glow: "from-emerald-100 via-white to-white",
+    icon: "bg-gradient-to-br from-emerald-500 to-emerald-700 text-white",
+    label: "text-emerald-700",
+  },
 };
 
 type FilterStatus = "active" | "all" | TicketStatus;
@@ -99,9 +122,9 @@ function label(value: string) {
 }
 
 function priorityIcon(priority: Priority) {
-  if (priority === "P1") return <AlertTriangle className="h-4 w-4" />;
-  if (priority === "P2") return <RadioTower className="h-4 w-4" />;
-  return <CircleDot className="h-4 w-4" />;
+  if (priority === "P1") return <AlertTriangle className="h-3.5 w-3.5" />;
+  if (priority === "P2") return <RadioTower className="h-3.5 w-3.5" />;
+  return <CircleDot className="h-3.5 w-3.5" />;
 }
 
 function isActive(ticket: TicketQueueItem) {
@@ -145,13 +168,13 @@ function SelectField({
   disabled?: boolean;
 }) {
   return (
-    <label className="grid min-w-0 gap-1 text-xs font-semibold uppercase text-zinc-500">
+    <label className="grid min-w-0 gap-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-stone-500">
       {labelText}
       <select
         value={value}
         disabled={disabled}
         onChange={(event) => onChange(event.target.value)}
-        className="h-10 w-full min-w-0 rounded-lg border border-zinc-200 bg-white px-3 text-sm font-medium normal-case text-zinc-950 shadow-sm outline-none transition focus:border-zinc-500 disabled:cursor-not-allowed disabled:bg-zinc-50"
+        className="input-field h-10 w-full min-w-0 px-3 text-sm font-medium normal-case tracking-normal text-stone-900 disabled:cursor-not-allowed disabled:bg-stone-50 disabled:text-stone-400"
       >
         {children}
       </select>
@@ -171,13 +194,13 @@ function TextField({
   placeholder: string;
 }) {
   return (
-    <label className="grid min-w-0 gap-1 text-xs font-semibold uppercase text-zinc-500">
+    <label className="grid min-w-0 gap-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-stone-500">
       {labelText}
       <input
         value={value}
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
-        className="h-10 w-full min-w-0 rounded-lg border border-zinc-200 bg-white px-3 text-sm normal-case text-zinc-950 shadow-sm outline-none transition placeholder:text-zinc-400 focus:border-zinc-500"
+        className="input-field h-10 w-full min-w-0 px-3 text-sm normal-case tracking-normal text-stone-900 placeholder:text-stone-400"
       />
     </label>
   );
@@ -185,23 +208,31 @@ function TextField({
 
 function MetricCard({ metric }: { metric: OpsMetric }) {
   const Icon = metricIcons[metric.key];
+  const accent = metricAccent[metric.key];
 
   return (
-    <div className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-sm font-semibold text-zinc-500">{metric.label}</p>
-          <p className="mt-2 text-3xl font-semibold text-zinc-950">
+    <div
+      className={`surface-card group relative overflow-hidden p-5 transition duration-300 hover:-translate-y-0.5 hover:shadow-[0_18px_40px_-22px_rgba(20,14,5,0.35)] ring-1 ${accent.ring}`}
+    >
+      <div
+        className={`pointer-events-none absolute -right-12 -top-12 h-40 w-40 rounded-full bg-gradient-to-br ${accent.glow} opacity-70 blur-2xl transition duration-500 group-hover:opacity-90`}
+      />
+      <div className="relative flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className={`text-[11px] font-semibold uppercase tracking-[0.1em] ${accent.label}`}>
+            {metric.label}
+          </p>
+          <p className="mt-3 text-4xl font-semibold tracking-tight text-stone-950 tabular-nums">
             {metric.value}
           </p>
         </div>
         <div
-          className={`flex h-10 w-10 items-center justify-center rounded-lg border ${metricAccent[metric.key]}`}
+          className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl shadow-md ring-1 ring-black/5 ${accent.icon}`}
         >
           <Icon className="h-5 w-5" />
         </div>
       </div>
-      <p className="mt-3 border-t border-zinc-100 pt-3 text-sm text-zinc-500">
+      <p className="relative mt-4 border-t border-stone-200/70 pt-3 text-sm leading-5 text-stone-500">
         {metric.detail}
       </p>
     </div>
@@ -228,56 +259,75 @@ function TicketListItem({
     <button
       type="button"
       onClick={onSelect}
-      className={`relative w-full border-b border-zinc-200 bg-white px-4 py-4 text-left transition last:border-b-0 hover:bg-[#fbfaf6] ${
-        selected ? "shadow-[inset_0_0_0_2px_#18181b]" : ""
+      className={`relative w-full border-b border-stone-200/70 px-5 py-4 text-left transition-colors duration-200 last:border-b-0 ${
+        selected
+          ? "bg-gradient-to-r from-stone-50 to-white"
+          : "bg-white hover:bg-stone-50/60"
       }`}
     >
       <span
-        className={`absolute left-0 top-0 h-full w-1 ${priorityRail[ticket.priority]}`}
+        className={`absolute left-0 top-3 bottom-3 w-[3px] rounded-r-full ${priorityRail[ticket.priority]} ${
+          selected ? "" : "opacity-80"
+        }`}
       />
+      {selected ? (
+        <span className="pointer-events-none absolute inset-y-0 right-0 w-[3px] rounded-l bg-stone-900" />
+      ) : null}
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="mb-2 flex flex-wrap items-center gap-2">
+          <div className="mb-2 flex flex-wrap items-center gap-1.5">
             <span
-              className={`inline-flex h-7 items-center gap-1 rounded-md border px-2 text-xs font-semibold ${priorityTone[ticket.priority]}`}
+              className={`inline-flex h-6 items-center gap-1 rounded-md px-2 text-[11px] font-semibold ${priorityClass[ticket.priority]}`}
             >
               {priorityIcon(ticket.priority)}
               {ticket.priority}
             </span>
             <span
-              className={`inline-flex h-7 items-center rounded-md px-2 text-xs font-semibold ring-1 ${statusTone[ticket.status]}`}
+              className={`inline-flex h-6 items-center rounded-md px-2 text-[11px] font-semibold capitalize ${statusTone[ticket.status]}`}
             >
               {label(ticket.status)}
             </span>
+            {isBreached ? (
+              <span className="inline-flex h-6 items-center gap-1 rounded-md bg-red-50 px-2 text-[11px] font-semibold text-red-700 ring-1 ring-red-200/80">
+                <Clock3 className="h-3 w-3" />
+                breach
+              </span>
+            ) : null}
           </div>
-          <h2 className="line-clamp-2 text-sm font-semibold leading-5 text-zinc-950">
+          <h2 className="line-clamp-2 text-[13.5px] font-semibold leading-5 text-stone-900">
             {ticket.title}
           </h2>
         </div>
-        <span className="shrink-0 rounded-md bg-zinc-950 px-2 py-1 font-mono text-xs text-white">
+        <span className="shrink-0 rounded-md bg-stone-900 px-2 py-1 font-mono text-[10px] font-semibold tracking-wide text-stone-50">
           TK-{ticket.ticketNumber}
         </span>
       </div>
-      <div className="mt-4 grid grid-cols-2 gap-3 text-xs">
-        <div>
-          <p className="font-semibold text-zinc-400">Owner</p>
-          <p className="mt-1 truncate text-zinc-700">{ticket.assignee}</p>
+      <div className="mt-3 grid grid-cols-2 gap-3 text-[11px]">
+        <div className="min-w-0">
+          <p className="font-semibold uppercase tracking-[0.08em] text-stone-400">
+            Owner
+          </p>
+          <p className="mt-1 truncate font-medium text-stone-700">
+            {ticket.assignee}
+          </p>
         </div>
-        <div>
-          <p className="font-semibold text-zinc-400">SLA</p>
+        <div className="min-w-0">
+          <p className="font-semibold uppercase tracking-[0.08em] text-stone-400">
+            SLA
+          </p>
           <p
-            className={`mt-1 truncate font-semibold ${
-              isBreached ? "text-red-700" : "text-zinc-700"
+            className={`mt-1 truncate font-semibold tabular-nums ${
+              isBreached ? "text-red-700" : "text-stone-700"
             }`}
           >
             {ticket.slaDueAt ? formatDateTime(ticket.slaDueAt) : "Not set"}
           </p>
         </div>
       </div>
-      <div className="mt-3 flex items-center justify-between gap-3 text-xs text-zinc-500">
+      <div className="mt-3 flex items-center justify-between gap-3 text-[11px] text-stone-500">
         <span className="truncate">{ticket.team}</span>
-        <span className="shrink-0">
-          {ticket.importanceScore} x {ticket.urgencyScore}
+        <span className="shrink-0 font-mono tabular-nums text-stone-400">
+          {ticket.importanceScore} × {ticket.urgencyScore}
         </span>
       </div>
     </button>
@@ -286,14 +336,14 @@ function TicketListItem({
 
 function EmptyState() {
   return (
-    <div className="px-5 py-12 text-center">
-      <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-lg border border-zinc-200 bg-white">
-        <Search className="h-5 w-5 text-zinc-500" />
+    <div className="px-5 py-16 text-center">
+      <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-stone-100 to-stone-200 ring-1 ring-stone-200">
+        <Search className="h-5 w-5 text-stone-500" />
       </div>
-      <p className="mt-4 text-sm font-semibold text-zinc-900">
+      <p className="mt-4 text-sm font-semibold text-stone-900">
         No tickets match
       </p>
-      <p className="mt-1 text-sm text-zinc-500">
+      <p className="mt-1 text-sm text-stone-500">
         Adjust filters or create one manually.
       </p>
     </div>
@@ -321,6 +371,7 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
 
   const nowMs = new Date(data.refreshedAt).getTime();
   const activeTickets = data.tickets.filter(isActive).length;
+  const isLive = data.source === "database";
 
   const filteredTickets = useMemo(() => {
     return data.tickets.filter((ticket) => {
@@ -454,60 +505,75 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
   const draftTeamUsers = usersForTeam(data.users, draft.assignedTeamId || null);
 
   return (
-    <main className="min-h-screen overflow-x-hidden bg-[#efeee8] text-zinc-950">
-      <div className="grid min-h-screen lg:grid-cols-[76px_minmax(0,1fr)]">
-        <aside className="hidden bg-[#15130f] text-white lg:flex lg:flex-col lg:items-center lg:justify-between lg:py-5">
-          <div className="grid gap-5">
-            <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-white text-zinc-950 shadow-sm">
+    <main className="min-h-screen overflow-x-hidden text-stone-900">
+      <div className="grid min-h-screen lg:grid-cols-[80px_minmax(0,1fr)]">
+        <aside className="sidebar-ink hidden text-white lg:flex lg:flex-col lg:items-center lg:justify-between lg:py-6">
+          <div className="grid gap-3">
+            <div className="relative flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-200 via-amber-100 to-stone-50 text-stone-900 shadow-lg ring-1 ring-black/10">
               <Bell className="h-5 w-5" />
+              <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-emerald-400 ring-2 ring-[#181614] ring-pulse" />
             </div>
-            {[Inbox, Activity, Database, Users].map((Icon, index) => (
-              <div
-                key={index}
-                className={`flex h-11 w-11 items-center justify-center rounded-lg ${
-                  index === 0
-                    ? "bg-amber-300 text-zinc-950"
-                    : "bg-white/10 text-zinc-300"
-                }`}
-              >
-                <Icon className="h-5 w-5" />
-              </div>
-            ))}
+            <div className="mt-3 grid gap-2">
+              {[Inbox, Activity, Database, Users].map((Icon, index) => (
+                <button
+                  key={index}
+                  type="button"
+                  className={`group relative flex h-11 w-11 items-center justify-center rounded-xl transition ${
+                    index === 0
+                      ? "bg-white text-stone-900 shadow-md ring-1 ring-white/40"
+                      : "text-stone-300 hover:bg-white/10 hover:text-white"
+                  }`}
+                >
+                  {index === 0 ? (
+                    <span className="absolute -left-3 top-1/2 h-6 -translate-y-1/2 rounded-r-full bg-amber-300 w-1" />
+                  ) : null}
+                  <Icon className="h-5 w-5" />
+                </button>
+              ))}
+            </div>
           </div>
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-white/15 text-xs font-semibold text-zinc-300">
-            K3
+          <div className="grid gap-3">
+            <div className="flex h-2 w-2 items-center justify-center self-center rounded-full bg-emerald-400 ring-pulse" />
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-[11px] font-semibold tracking-wide text-stone-200">
+              K3
+            </div>
           </div>
         </aside>
 
         <div className="min-w-0">
-          <header className="sticky top-0 z-20 border-b border-zinc-200 bg-[#fbfaf6]/95 backdrop-blur">
-            <div className="mx-auto flex max-w-[1540px] flex-col gap-4 px-4 py-4 sm:px-6 xl:flex-row xl:items-center xl:justify-between xl:px-8">
+          <header className="glass-header sticky top-0 z-20 border-b border-stone-200/70">
+            <div className="mx-auto flex max-w-[1540px] flex-col gap-4 px-4 py-4 sm:px-6 xl:flex-row xl:items-center xl:justify-between xl:px-10">
               <div className="flex min-w-0 items-center gap-4">
-                <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-zinc-950 text-white lg:hidden">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-stone-900 to-stone-700 text-white shadow-md ring-1 ring-black/10 lg:hidden">
                   <Bell className="h-5 w-5" />
                 </div>
                 <div className="min-w-0">
-                  <p className="text-sm font-semibold text-zinc-500">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-stone-500">
                     Alert Triage
                   </p>
-                  <h1 className="truncate text-xl font-semibold text-zinc-950 sm:text-2xl">
+                  <h1 className="truncate font-semibold tracking-tight text-stone-950 text-[22px] sm:text-[26px]">
                     Operations command center
                   </h1>
                 </div>
               </div>
-              <div className="grid w-[calc(100vw-2rem)] max-w-full grid-cols-1 gap-2 sm:flex sm:w-full sm:flex-wrap xl:w-auto">
+              <div className="grid w-[calc(100vw-2rem)] max-w-full grid-cols-1 gap-2 sm:flex sm:w-full sm:flex-wrap sm:items-center xl:w-auto">
                 <span
-                  className={`inline-flex h-10 items-center justify-center gap-2 rounded-lg border px-3 text-sm font-semibold ${
-                    data.source === "database"
-                      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                  className={`inline-flex h-10 items-center justify-center gap-2 rounded-full border px-3.5 text-[12.5px] font-semibold ${
+                    isLive
+                      ? "border-emerald-200 bg-emerald-50 text-emerald-800"
                       : "border-amber-200 bg-amber-50 text-amber-800"
                   }`}
                 >
+                  <span
+                    className={`h-2 w-2 rounded-full ${
+                      isLive ? "bg-emerald-500 ring-pulse" : "bg-amber-500 pulse-soft"
+                    }`}
+                  />
                   <ShieldCheck className="h-4 w-4" />
-                  {data.source === "database" ? "Neon live" : "Demo data"}
+                  {isLive ? "Neon live" : "Demo data"}
                 </span>
-                <span className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-amber-200 bg-white px-3 text-sm font-semibold text-amber-800">
-                  <Layers3 className="h-4 w-4" />
+                <span className="inline-flex h-10 items-center justify-center gap-2 rounded-full border border-stone-200 bg-white/80 px-3.5 text-[12.5px] font-semibold text-stone-700 backdrop-blur">
+                  <Layers3 className="h-4 w-4 text-amber-600" />
                   Integrations pending
                 </span>
                 <button
@@ -516,50 +582,54 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
                     runMutation(() => refresh().then(() => "Refreshed"))
                   }
                   disabled={isPending}
-                  className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-zinc-950 px-3 text-sm font-semibold text-white shadow-sm disabled:opacity-60"
+                  className="btn-primary inline-flex h-10 items-center justify-center gap-2 rounded-full px-4 text-[12.5px] font-semibold disabled:opacity-60"
                 >
-                  <RotateCcw className="h-4 w-4" />
+                  <RotateCcw className={`h-4 w-4 ${isPending ? "animate-spin" : ""}`} />
                   Refresh
                 </button>
               </div>
             </div>
           </header>
 
-          <section className="mx-auto max-w-[1540px] px-4 py-5 sm:px-6 xl:px-8">
+          <section className="mx-auto max-w-[1540px] px-4 py-6 sm:px-6 xl:px-10">
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
               {data.metrics.map((metric) => (
                 <MetricCard key={metric.key} metric={metric} />
               ))}
             </div>
 
-            <div className="mt-5 grid gap-5 xl:grid-cols-[390px_minmax(0,1fr)_360px]">
-              <section className="overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-sm">
-                <div className="border-b border-zinc-200 bg-[#fbfaf6] p-4">
+            <div className="mt-6 grid gap-5 xl:grid-cols-[400px_minmax(0,1fr)_360px]">
+              <section className="surface-card overflow-hidden">
+                <div className="border-b border-stone-200/70 bg-gradient-to-b from-stone-50 to-white p-5">
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex min-w-0 items-center gap-3">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-zinc-950 text-white">
+                      <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-stone-900 to-stone-700 text-white shadow-md ring-1 ring-black/10">
                         <Inbox className="h-5 w-5" />
                       </div>
                       <div className="min-w-0">
-                        <h2 className="text-base font-semibold">
+                        <h2 className="text-[15px] font-semibold tracking-tight text-stone-950">
                           Triage queue
                         </h2>
-                        <p className="text-sm text-zinc-500">
-                          {activeTickets} active, {data.tickets.length} total
+                        <p className="text-[12.5px] text-stone-500">
+                          <span className="font-semibold text-stone-700 tabular-nums">
+                            {activeTickets}
+                          </span>{" "}
+                          active ·{" "}
+                          <span className="tabular-nums">{data.tickets.length}</span> total
                         </p>
                       </div>
                     </div>
-                    <span className="rounded-md border border-zinc-200 bg-white px-2 py-1 text-xs font-semibold text-zinc-600">
+                    <span className="rounded-full border border-stone-200 bg-white px-2.5 py-1 text-[11px] font-semibold tabular-nums text-stone-600 shadow-sm">
                       {filteredTickets.length} shown
                     </span>
                   </div>
                   <div className="relative mt-4">
-                    <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-zinc-400" />
+                    <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-stone-400" />
                     <input
                       value={query}
                       onChange={(event) => setQuery(event.target.value)}
-                      placeholder="Search tickets"
-                      className="h-10 w-full min-w-0 rounded-lg border border-zinc-200 bg-white pl-9 pr-3 text-sm shadow-sm outline-none transition placeholder:text-zinc-400 focus:border-zinc-500"
+                      placeholder="Search by title, owner, team…"
+                      className="input-field h-10 w-full min-w-0 pl-9 pr-3 text-sm text-stone-900 placeholder:text-stone-400"
                     />
                   </div>
                   <div className="mt-3 grid gap-2 sm:grid-cols-2">
@@ -611,7 +681,7 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
                           setStatusFilter("active");
                           setTeamFilter("all");
                         }}
-                        className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-700 shadow-sm"
+                        className="btn-soft inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg px-3 text-sm font-semibold"
                       >
                         <SlidersHorizontal className="h-4 w-4" />
                         Reset
@@ -619,7 +689,7 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
                     </div>
                   </div>
                 </div>
-                <div className="max-h-[calc(100vh-360px)] min-h-[360px] overflow-y-auto">
+                <div className="fancy-scroll max-h-[calc(100vh-360px)] min-h-[360px] overflow-y-auto">
                   {filteredTickets.length > 0 ? (
                     filteredTickets.map((ticket) => (
                       <TicketListItem
@@ -636,42 +706,53 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
                 </div>
               </section>
 
-              <section className="rounded-lg border border-zinc-200 bg-white shadow-sm">
+              <section className="surface-card overflow-hidden">
                 {selectedTicket ? (
                   <div>
-                    <div className="border-b border-zinc-200 bg-zinc-950 p-5 text-white">
-                      <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="hero-ink relative overflow-hidden border-b border-black/40 px-6 py-6 text-white">
+                      <div className="pointer-events-none absolute -right-16 -top-16 h-56 w-56 rounded-full bg-amber-400/10 blur-3xl" />
+                      <div className="pointer-events-none absolute -left-10 -bottom-10 h-48 w-48 rounded-full bg-sky-400/10 blur-3xl" />
+                      <div className="relative flex flex-wrap items-start justify-between gap-4">
                         <div className="min-w-0">
                           <div className="flex flex-wrap items-center gap-2">
                             <span
-                              className={`inline-flex h-7 items-center gap-1 rounded-md border px-2 text-xs font-semibold ${priorityTone[selectedTicket.priority]}`}
+                              className={`inline-flex h-7 items-center gap-1 rounded-md px-2 text-[11px] font-semibold ${priorityClass[selectedTicket.priority]}`}
                             >
                               {priorityIcon(selectedTicket.priority)}
                               {selectedTicket.priority}
                             </span>
-                            <span className="rounded-md bg-white/10 px-2 py-1 font-mono text-xs text-zinc-200">
+                            <span className="rounded-md bg-white/10 px-2 py-1 font-mono text-[11px] tracking-wide text-stone-200 ring-1 ring-white/10">
                               TK-{selectedTicket.ticketNumber}
                             </span>
+                            <span
+                              className={`inline-flex h-7 items-center rounded-md bg-white/8 px-2 text-[11px] font-semibold capitalize text-stone-100 ring-1 ring-white/10 ${
+                                selectedTicket.status === "in_progress"
+                                  ? "text-amber-200"
+                                  : ""
+                              }`}
+                            >
+                              {label(selectedTicket.status)}
+                            </span>
                           </div>
-                          <h2 className="mt-4 max-w-3xl text-2xl font-semibold leading-8">
+                          <h2 className="mt-4 max-w-3xl text-[26px] font-semibold leading-[1.2] tracking-tight">
                             {selectedTicket.title}
                           </h2>
-                          <p className="mt-3 max-w-3xl text-sm leading-6 text-zinc-300">
+                          <p className="mt-3 max-w-3xl text-[14px] leading-6 text-stone-300/90">
                             {selectedTicket.description || "No description yet."}
                           </p>
                         </div>
-                        <div className="rounded-lg border border-white/10 bg-white/10 p-3">
-                          <p className="text-xs font-semibold text-zinc-400">
+                        <div className="rounded-xl border border-white/10 bg-white/[0.04] p-3.5 backdrop-blur">
+                          <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-stone-400">
                             Last refresh
                           </p>
-                          <p className="mt-1 text-sm font-semibold">
+                          <p className="mt-1 text-[13px] font-semibold tabular-nums">
                             {formatDateTime(data.refreshedAt)}
                           </p>
                         </div>
                       </div>
                     </div>
 
-                    <div className="grid gap-4 border-b border-zinc-200 bg-[#fbfaf6] p-4 md:grid-cols-4">
+                    <div className="grid gap-3 border-b border-stone-200/70 bg-gradient-to-b from-stone-50 to-white p-5 md:grid-cols-4">
                       {[
                         ["Status", label(selectedTicket.status)],
                         ["Owner", selectedTicket.assignee],
@@ -681,22 +762,25 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
                           selectedTicket.reporterEmail ?? "system alert",
                         ],
                       ].map(([title, value]) => (
-                        <div key={title} className="rounded-lg bg-white p-3">
-                          <p className="text-xs font-semibold text-zinc-400">
+                        <div
+                          key={title}
+                          className="rounded-xl border border-stone-200/70 bg-white p-3 shadow-sm"
+                        >
+                          <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-stone-400">
                             {title}
                           </p>
-                          <p className="mt-1 truncate text-sm font-semibold text-zinc-900">
+                          <p className="mt-1 truncate text-[13.5px] font-semibold capitalize text-stone-900">
                             {value}
                           </p>
                         </div>
                       ))}
                     </div>
 
-                    <div className="p-5">
+                    <div className="p-6">
                       <div className="grid gap-3 md:grid-cols-3">
                         <button
                           type="button"
-                          disabled={isPending || data.source !== "database"}
+                          disabled={isPending || !isLive}
                           onClick={() =>
                             runMutation(async () => {
                               await patchTicket(selectedTicket.id, {
@@ -706,14 +790,14 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
                               return "Acknowledged";
                             })
                           }
-                          className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-zinc-950 px-3 text-sm font-semibold text-white shadow-sm disabled:opacity-60"
+                          className="btn-primary inline-flex h-11 items-center justify-center gap-2 rounded-xl px-3 text-sm font-semibold disabled:opacity-60"
                         >
                           <CheckCircle2 className="h-4 w-4" />
                           Acknowledge
                         </button>
                         <button
                           type="button"
-                          disabled={isPending || data.source !== "database"}
+                          disabled={isPending || !isLive}
                           onClick={() =>
                             runMutation(async () => {
                               await patchTicket(selectedTicket.id, {
@@ -723,14 +807,14 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
                               return "Resolved";
                             })
                           }
-                          className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-emerald-600 px-3 text-sm font-semibold text-white shadow-sm disabled:opacity-60"
+                          className="btn-success inline-flex h-11 items-center justify-center gap-2 rounded-xl px-3 text-sm font-semibold disabled:opacity-60"
                         >
                           <CheckCircle2 className="h-4 w-4" />
                           Resolve
                         </button>
                         <button
                           type="button"
-                          disabled={isPending || data.source !== "database"}
+                          disabled={isPending || !isLive}
                           onClick={() =>
                             runMutation(async () => {
                               await patchTicket(selectedTicket.id, {
@@ -740,7 +824,7 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
                               return "Reopened";
                             })
                           }
-                          className="inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-700 shadow-sm disabled:opacity-60"
+                          className="btn-soft inline-flex h-11 items-center justify-center gap-2 rounded-xl px-3 text-sm font-semibold disabled:opacity-60"
                         >
                           <XCircle className="h-4 w-4" />
                           Reopen
@@ -751,7 +835,7 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
                         <SelectField
                           labelText="Status"
                           value={selectedTicket.status}
-                          disabled={isPending || data.source !== "database"}
+                          disabled={isPending || !isLive}
                           onChange={(value) =>
                             runMutation(async () => {
                               await patchTicket(selectedTicket.id, {
@@ -771,7 +855,7 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
                         <SelectField
                           labelText="Priority"
                           value={selectedTicket.priority}
-                          disabled={isPending || data.source !== "database"}
+                          disabled={isPending || !isLive}
                           onChange={(value) =>
                             runMutation(async () => {
                               await patchTicket(selectedTicket.id, {
@@ -791,7 +875,7 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
                         <SelectField
                           labelText="Team"
                           value={selectedTicket.assignedTeamId ?? ""}
-                          disabled={isPending || data.source !== "database"}
+                          disabled={isPending || !isLive}
                           onChange={(value) =>
                             runMutation(async () => {
                               await patchTicket(selectedTicket.id, {
@@ -813,7 +897,7 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
                         <SelectField
                           labelText="Owner"
                           value={selectedTicket.assignedUserId ?? ""}
-                          disabled={isPending || data.source !== "database"}
+                          disabled={isPending || !isLive}
                           onChange={(value) =>
                             runMutation(async () => {
                               await patchTicket(selectedTicket.id, {
@@ -833,94 +917,111 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
                         </SelectField>
                       </div>
 
-                      <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(0,1fr)_280px]">
+                      <div className="mt-6 grid gap-5 lg:grid-cols-[minmax(0,1fr)_280px]">
                         <form onSubmit={submitComment} className="space-y-3">
-                          <label className="grid min-w-0 gap-1 text-xs font-semibold uppercase text-zinc-500">
+                          <label className="grid min-w-0 gap-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-stone-500">
                             Comment
                             <textarea
                               value={comment}
                               onChange={(event) => setComment(event.target.value)}
                               rows={5}
-                              placeholder="Add update"
-                              disabled={isPending || data.source !== "database"}
-                              className="w-full min-w-0 resize-none rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm normal-case text-zinc-950 shadow-sm outline-none transition placeholder:text-zinc-400 focus:border-zinc-500 disabled:bg-zinc-50"
+                              placeholder="Add an update for the team…"
+                              disabled={isPending || !isLive}
+                              className="input-field w-full min-w-0 resize-none px-3 py-2.5 text-sm normal-case tracking-normal text-stone-900 placeholder:text-stone-400 disabled:bg-stone-50"
                             />
                           </label>
                           <button
                             type="submit"
                             disabled={
-                              !comment.trim() ||
-                              isPending ||
-                              data.source !== "database"
+                              !comment.trim() || isPending || !isLive
                             }
-                            className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-700 shadow-sm disabled:opacity-60"
+                            className="btn-soft inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl px-3 text-sm font-semibold disabled:opacity-60"
                           >
                             <MessageSquarePlus className="h-4 w-4" />
                             Add comment
                           </button>
                         </form>
 
-                        <div className="rounded-lg border border-zinc-200 bg-[#fbfaf6] p-4">
-                          <p className="text-sm font-semibold text-zinc-950">
+                        <div className="surface-inset p-4">
+                          <p className="text-[13px] font-semibold tracking-tight text-stone-950">
                             Incident shape
                           </p>
-                          <div className="mt-4 space-y-3">
-                            <div className="flex items-center justify-between text-sm">
-                              <span className="text-zinc-500">Duplicates</span>
-                              <span className="font-semibold">
+                          <div className="mt-4 space-y-3 text-sm">
+                            <div className="flex items-center justify-between">
+                              <span className="text-stone-500">Duplicates</span>
+                              <span className="rounded-md bg-white px-2 py-0.5 font-semibold tabular-nums text-stone-900 ring-1 ring-stone-200">
                                 {selectedTicket.duplicateCount}
                               </span>
                             </div>
-                            <div className="flex items-center justify-between text-sm">
-                              <span className="text-zinc-500">Score</span>
-                              <span className="font-semibold">
-                                {selectedTicket.importanceScore} x{" "}
+                            <div className="flex items-center justify-between">
+                              <span className="text-stone-500">Score</span>
+                              <span className="rounded-md bg-white px-2 py-0.5 font-mono text-[12px] font-semibold tabular-nums text-stone-900 ring-1 ring-stone-200">
+                                {selectedTicket.importanceScore} ×{" "}
                                 {selectedTicket.urgencyScore}
                               </span>
                             </div>
-                            <div className="flex items-center justify-between text-sm">
-                              <span className="text-zinc-500">SLA</span>
-                              <span className="font-semibold">
+                            <div className="flex items-center justify-between">
+                              <span className="text-stone-500">SLA</span>
+                              <span className="font-semibold tabular-nums text-stone-900">
                                 {selectedTicket.slaDueAt
                                   ? formatDateTime(selectedTicket.slaDueAt)
                                   : "Not set"}
                               </span>
                             </div>
                             {selectedIncident ? (
-                              <div className="border-t border-zinc-200 pt-3 text-sm text-zinc-600">
-                                {selectedIncident.blastCount} linked alerts,
-                                confidence {selectedIncident.confidence ?? "n/a"}
+                              <div className="border-t border-stone-200 pt-3 text-[12.5px] leading-5 text-stone-600">
+                                <span className="font-semibold text-stone-800">
+                                  {selectedIncident.blastCount}
+                                </span>{" "}
+                                linked alerts · confidence{" "}
+                                <span className="font-semibold text-stone-800">
+                                  {selectedIncident.confidence ?? "n/a"}
+                                </span>
                               </div>
                             ) : null}
                           </div>
                         </div>
                       </div>
 
-                      <div className="mt-6 border-t border-zinc-200 pt-5">
+                      <div className="mt-7 border-t border-stone-200/70 pt-5">
                         <div className="mb-4 flex items-center justify-between">
-                          <h3 className="text-base font-semibold">Timeline</h3>
-                          <span className="rounded-md bg-zinc-100 px-2 py-1 text-xs font-semibold text-zinc-600">
+                          <h3 className="text-[15px] font-semibold tracking-tight text-stone-950">
+                            Timeline
+                          </h3>
+                          <span className="rounded-full bg-stone-100 px-2.5 py-1 text-[11px] font-semibold tabular-nums text-stone-600 ring-1 ring-stone-200/70">
                             {selectedTicket.comments.length} comments
                           </span>
                         </div>
-                        <div className="space-y-4">
+                        <div className="space-y-5">
                           {selectedTicket.comments.length > 0 ? (
-                            selectedTicket.comments.map((item) => (
-                              <div
-                                key={item.id}
-                                className="grid gap-3 border-l-2 border-zinc-300 pl-4"
-                              >
-                                <p className="text-sm leading-6 text-zinc-900">
+                            selectedTicket.comments.map((item, index) => (
+                              <div key={item.id} className="relative grid gap-2 pl-6">
+                                <span
+                                  aria-hidden
+                                  className="absolute left-1.5 top-1.5 h-2.5 w-2.5 rounded-full bg-gradient-to-br from-stone-700 to-stone-900 ring-4 ring-stone-100"
+                                />
+                                {index < selectedTicket.comments.length - 1 ? (
+                                  <span
+                                    aria-hidden
+                                    className="absolute left-[10px] top-4 h-[calc(100%+0.75rem)] w-px bg-stone-200"
+                                  />
+                                ) : null}
+                                <p className="text-[14px] leading-6 text-stone-900">
                                   {item.body}
                                 </p>
-                                <p className="text-xs text-zinc-500">
-                                  {item.authorEmail ?? "system"} -{" "}
-                                  {formatDateTime(item.createdAt)}
+                                <p className="text-[11.5px] text-stone-500">
+                                  <span className="font-medium text-stone-700">
+                                    {item.authorEmail ?? "system"}
+                                  </span>{" "}
+                                  ·{" "}
+                                  <span className="tabular-nums">
+                                    {formatDateTime(item.createdAt)}
+                                  </span>
                                 </p>
                               </div>
                             ))
                           ) : (
-                            <p className="text-sm text-zinc-500">
+                            <p className="text-sm text-stone-500">
                               No comments yet.
                             </p>
                           )}
@@ -931,11 +1032,14 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
                 ) : (
                   <div className="grid min-h-[520px] place-items-center p-8 text-center">
                     <div>
-                      <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-lg bg-zinc-950 text-white">
-                        <Sparkles className="h-6 w-6" />
+                      <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-stone-900 to-stone-700 text-white shadow-lg ring-1 ring-black/10">
+                        <Sparkles className="h-7 w-7" />
                       </div>
-                      <p className="mt-4 text-base font-semibold text-zinc-950">
+                      <p className="mt-4 text-[15px] font-semibold tracking-tight text-stone-950">
                         Select or create a ticket
+                      </p>
+                      <p className="mt-1 text-sm text-stone-500">
+                        Choose one from the queue, or use manual intake.
                       </p>
                     </div>
                   </div>
@@ -943,13 +1047,19 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
               </section>
 
               <aside className="space-y-5">
-                <section className="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm">
+                <section className="surface-card p-5">
                   <div className="mb-4 flex items-center justify-between">
                     <div>
-                      <h2 className="text-base font-semibold">Manual intake</h2>
-                      <p className="text-sm text-zinc-500">Create a live ticket</p>
+                      <h2 className="text-[15px] font-semibold tracking-tight text-stone-950">
+                        Manual intake
+                      </h2>
+                      <p className="text-[12.5px] text-stone-500">
+                        Create a live ticket
+                      </p>
                     </div>
-                    <Plus className="h-5 w-5 text-zinc-500" />
+                    <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-stone-900 to-stone-700 text-white shadow-md ring-1 ring-black/10">
+                      <Plus className="h-4 w-4" />
+                    </div>
                   </div>
                   <form onSubmit={createManualTicket} className="space-y-3">
                     <TextField
@@ -960,7 +1070,7 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
                       }
                       placeholder="Short incident title"
                     />
-                    <label className="grid min-w-0 gap-1 text-xs font-semibold uppercase text-zinc-500">
+                    <label className="grid min-w-0 gap-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-stone-500">
                       Description
                       <textarea
                         value={draft.description}
@@ -972,7 +1082,7 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
                         }
                         rows={4}
                         placeholder="What happened?"
-                        className="w-full min-w-0 resize-none rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm normal-case text-zinc-950 shadow-sm outline-none transition placeholder:text-zinc-400 focus:border-zinc-500"
+                        className="input-field w-full min-w-0 resize-none px-3 py-2.5 text-sm normal-case tracking-normal text-stone-900 placeholder:text-stone-400"
                       />
                     </label>
                     <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-3">
@@ -1035,12 +1145,8 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
                     </div>
                     <button
                       type="submit"
-                      disabled={
-                        !draft.title.trim() ||
-                        isPending ||
-                        data.source !== "database"
-                      }
-                      className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-zinc-950 px-3 text-sm font-semibold text-white shadow-sm disabled:opacity-60"
+                      disabled={!draft.title.trim() || isPending || !isLive}
+                      className="btn-primary inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl px-3 text-sm font-semibold disabled:opacity-60"
                     >
                       <Send className="h-4 w-4" />
                       Create ticket
@@ -1048,10 +1154,14 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
                   </form>
                 </section>
 
-                <section className="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm">
+                <section className="surface-card p-5">
                   <div className="mb-4 flex items-center justify-between">
-                    <h2 className="text-base font-semibold">Team load</h2>
-                    <Users className="h-5 w-5 text-zinc-500" />
+                    <h2 className="text-[15px] font-semibold tracking-tight text-stone-950">
+                      Team load
+                    </h2>
+                    <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-sky-500 to-sky-700 text-white shadow-md ring-1 ring-black/10">
+                      <Users className="h-4 w-4" />
+                    </div>
                   </div>
                   <div className="space-y-4">
                     {data.teamLoad.map((team) => {
@@ -1059,17 +1169,25 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
                         100,
                         Math.max(12, team.openTickets * 18),
                       );
+                      const tone =
+                        width > 75
+                          ? "from-red-500 to-red-700"
+                          : width > 50
+                            ? "from-amber-400 to-amber-600"
+                            : "from-stone-700 to-stone-900";
                       return (
                         <div key={team.team}>
-                          <div className="mb-2 flex items-center justify-between text-sm">
-                            <span className="font-semibold">{team.team}</span>
-                            <span className="text-zinc-500">
+                          <div className="mb-2 flex items-center justify-between text-[13px]">
+                            <span className="font-semibold tracking-tight text-stone-900">
+                              {team.team}
+                            </span>
+                            <span className="text-stone-500 tabular-nums">
                               {team.openTickets} open
                             </span>
                           </div>
-                          <div className="h-2 rounded-full bg-zinc-100">
+                          <div className="relative h-2 overflow-hidden rounded-full bg-stone-100 ring-1 ring-stone-200/60">
                             <div
-                              className="h-2 rounded-full bg-zinc-950"
+                              className={`h-2 rounded-full bg-gradient-to-r ${tone} shadow-[0_0_12px_rgba(0,0,0,0.08)] transition-all duration-500`}
                               style={{ width: `${width}%` }}
                             />
                           </div>
@@ -1079,17 +1197,18 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
                   </div>
                 </section>
 
-                <section className="rounded-lg border border-amber-200 bg-amber-50 p-5 text-amber-950 shadow-sm">
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-300 text-zinc-950">
+                <section className="relative overflow-hidden rounded-2xl border border-amber-200/70 bg-gradient-to-br from-amber-50 via-amber-100/70 to-amber-50 p-5 text-amber-950 shadow-[0_8px_24px_-16px_rgba(180,83,9,0.4)]">
+                  <div className="pointer-events-none absolute -right-10 -top-10 h-32 w-32 rounded-full bg-amber-300/40 blur-2xl" />
+                  <div className="relative flex items-center gap-3">
+                    <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-300 to-amber-500 text-amber-950 shadow-md ring-1 ring-amber-600/20">
                       <Database className="h-5 w-5" />
                     </div>
                     <div>
-                      <h2 className="text-base font-semibold">
+                      <h2 className="text-[15px] font-semibold tracking-tight">
                         Final setup queue
                       </h2>
-                      <p className="text-sm text-amber-800">
-                        Provider webhooks and API keys
+                      <p className="text-[12.5px] text-amber-800">
+                        Provider webhooks & API keys
                       </p>
                     </div>
                   </div>
@@ -1101,8 +1220,11 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
       </div>
 
       {notice ? (
-        <div className="fixed bottom-4 left-1/2 z-50 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 rounded-lg border border-zinc-200 bg-white px-4 py-3 text-sm font-semibold text-zinc-800 shadow-lg">
-          {notice}
+        <div className="fixed bottom-5 left-1/2 z-50 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 rounded-2xl border border-stone-200 bg-white/95 px-4 py-3 text-sm font-semibold text-stone-800 shadow-[0_24px_48px_-24px_rgba(20,14,5,0.45)] backdrop-blur">
+          <div className="flex items-center gap-2">
+            <span className="h-2 w-2 rounded-full bg-emerald-500 ring-pulse" />
+            {notice}
+          </div>
         </div>
       ) : null}
     </main>

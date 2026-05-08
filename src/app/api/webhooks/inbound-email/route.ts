@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { NextResponse } from "next/server";
 import { getSql, hasDatabaseUrl } from "@/lib/db";
+import { createTicket } from "@/lib/operations";
 import type { Priority } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -129,17 +130,35 @@ export async function POST(request: Request) {
     );
   }
 
-  if (!hasDatabaseUrl()) {
-    return NextResponse.json(
-      { ok: false, error: "DATABASE_URL is not configured" },
-      { status: 503 },
-    );
-  }
-
   const rawPayload = await readPayload(request);
   const alert = normalizeAlert(rawPayload);
   const alertFingerprint = fingerprint(alert);
   const score = scoreAlert(alert);
+
+  if (!hasDatabaseUrl()) {
+    const ticket = await createTicket({
+      title: alert.subject,
+      description: alert.bodyText,
+      priority: score.priority,
+      reporterEmail: alert.senderEmail,
+      comment: `Demo webhook intake from ${alert.source}.`,
+    });
+
+    return NextResponse.json(
+      {
+        ok: true,
+        mode: "demo",
+        alertId: `demo-alert-${Date.now()}`,
+        incidentId: null,
+        ticketId: ticket.id,
+        ticketNumber: ticket.ticket_number,
+        priority: score.priority,
+        fingerprint: alertFingerprint,
+      },
+      { status: 202 },
+    );
+  }
+
   const sql = getSql();
 
   const orgRows = (await sql`

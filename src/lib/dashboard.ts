@@ -1,5 +1,5 @@
 import { getSql, hasDatabaseUrl } from "./db";
-import { getMockDashboardData } from "./mock-data";
+import { getDemoDashboardData } from "./demo-store";
 import type {
   DashboardData,
   IncidentSnapshot,
@@ -91,7 +91,7 @@ function toPriority(value: string): Priority {
 
 export async function getDashboardData(): Promise<DashboardData> {
   if (!hasDatabaseUrl()) {
-    return getMockDashboardData();
+    return getDemoDashboardData();
   }
 
   try {
@@ -347,6 +347,6 @@ export async function getDashboardData(): Promise<DashboardData> {
     const message =
       error instanceof Error ? error.message : "Unknown database error";
 
-    return getMockDashboardData(message);
+    return getDemoDashboardData(message);
   }
 }

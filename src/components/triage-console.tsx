@@ -193,17 +193,20 @@ function TextField({
   onChange,
   placeholder,
   inputRef,
+  type = "text",
 }: {
   labelText: string;
   value: string;
   onChange: (value: string) => void;
   placeholder: string;
   inputRef?: RefObject<HTMLInputElement | null>;
+  type?: "email" | "password" | "text" | "url";
 }) {
   return (
     <label className="grid min-w-0 gap-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-stone-500">
       {labelText}
       <input
+        type={type}
         ref={inputRef}
         value={value}
         onChange={(event) => onChange(event.target.value)}
@@ -393,10 +396,16 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
     assignedTeamId: "",
     assignedUserId: "",
   });
+  const [integrationTest, setIntegrationTest] = useState({
+    webhookUrl: "",
+    apiKey: "",
+    subject: "Integration smoke alert",
+  });
 
   const nowMs = new Date(data.refreshedAt).getTime();
   const activeTickets = data.tickets.filter(isActive).length;
   const isLive = data.source === "database";
+  const canMutate = isLive || (data.source === "demo" && !data.dbError);
   const breachedTickets = data.tickets.filter((ticket) =>
     isBreachedTicket(ticket, nowMs),
   ).length;
@@ -563,6 +572,36 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
     };
 
     void copyText(JSON.stringify(payload, null, 2), "Webhook example");
+  }
+
+  async function testIntegration() {
+    const response = await fetch("/api/integration-test", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(integrationTest),
+    });
+    const result = (await response.json()) as {
+      ok?: boolean;
+      error?: string;
+      status?: number;
+      ticketId?: string | null;
+      ticketNumber?: string | null;
+    };
+
+    if (!response.ok || !result.ok) {
+      const status = result.status ? ` (${result.status})` : "";
+      throw new Error(`${result.error ?? "Integration test failed"}${status}`);
+    }
+
+    await refresh(result.ticketId ?? undefined);
+    return result.ticketNumber
+      ? `Test alert created TK-${result.ticketNumber}`
+      : "Webhook test accepted";
+  }
+
+  function submitIntegrationTest(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    runMutation(testIntegration);
   }
 
   async function patchTicket(ticketId: string, payload: Record<string, unknown>) {
@@ -999,7 +1038,7 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
                       <div className="grid gap-3 md:grid-cols-3">
                         <button
                           type="button"
-                          disabled={isPending || !isLive}
+                          disabled={isPending || !canMutate}
                           onClick={() =>
                             runMutation(async () => {
                               await patchTicket(selectedTicket.id, {
@@ -1016,7 +1055,7 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
                         </button>
                         <button
                           type="button"
-                          disabled={isPending || !isLive}
+                          disabled={isPending || !canMutate}
                           onClick={() =>
                             runMutation(async () => {
                               await patchTicket(selectedTicket.id, {
@@ -1033,7 +1072,7 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
                         </button>
                         <button
                           type="button"
-                          disabled={isPending || !isLive}
+                          disabled={isPending || !canMutate}
                           onClick={() =>
                             runMutation(async () => {
                               await patchTicket(selectedTicket.id, {
@@ -1054,7 +1093,7 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
                         <SelectField
                           labelText="Status"
                           value={selectedTicket.status}
-                          disabled={isPending || !isLive}
+                          disabled={isPending || !canMutate}
                           onChange={(value) =>
                             runMutation(async () => {
                               await patchTicket(selectedTicket.id, {
@@ -1074,7 +1113,7 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
                         <SelectField
                           labelText="Priority"
                           value={selectedTicket.priority}
-                          disabled={isPending || !isLive}
+                          disabled={isPending || !canMutate}
                           onChange={(value) =>
                             runMutation(async () => {
                               await patchTicket(selectedTicket.id, {
@@ -1094,7 +1133,7 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
                         <SelectField
                           labelText="Team"
                           value={selectedTicket.assignedTeamId ?? ""}
-                          disabled={isPending || !isLive}
+                          disabled={isPending || !canMutate}
                           onChange={(value) =>
                             runMutation(async () => {
                               await patchTicket(selectedTicket.id, {
@@ -1116,7 +1155,7 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
                         <SelectField
                           labelText="Owner"
                           value={selectedTicket.assignedUserId ?? ""}
-                          disabled={isPending || !isLive}
+                          disabled={isPending || !canMutate}
                           onChange={(value) =>
                             runMutation(async () => {
                               await patchTicket(selectedTicket.id, {
@@ -1145,14 +1184,14 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
                               onChange={(event) => setComment(event.target.value)}
                               rows={5}
                               placeholder="Add an update for the team…"
-                              disabled={isPending || !isLive}
+                              disabled={isPending || !canMutate}
                               className="input-field w-full min-w-0 resize-none px-3 py-2.5 text-sm normal-case tracking-normal text-stone-900 placeholder:text-stone-400 disabled:bg-stone-50"
                             />
                           </label>
                           <button
                             type="submit"
                             disabled={
-                              !comment.trim() || isPending || !isLive
+                              !comment.trim() || isPending || !canMutate
                             }
                             className="btn-soft inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl px-3 text-sm font-semibold disabled:opacity-60"
                           >
@@ -1375,7 +1414,7 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
                     </div>
                     <button
                       type="submit"
-                      disabled={!draft.title.trim() || isPending || !isLive}
+                      disabled={!draft.title.trim() || isPending || !canMutate}
                       className="btn-primary inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl px-3 text-sm font-semibold disabled:opacity-60"
                     >
                       <Send className="h-4 w-4" />
@@ -1466,7 +1505,51 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
                       </p>
                     </div>
                   </div>
-                  <div className="mt-4 grid gap-2">
+                  <form onSubmit={submitIntegrationTest} className="mt-4 grid gap-3">
+                    <TextField
+                      labelText="Webhook URL"
+                      value={integrationTest.webhookUrl}
+                      onChange={(value) =>
+                        setIntegrationTest((next) => ({
+                          ...next,
+                          webhookUrl: value,
+                        }))
+                      }
+                      placeholder="/api/webhooks/inbound-email"
+                    />
+                    <TextField
+                      labelText="API key or secret"
+                      type="password"
+                      value={integrationTest.apiKey}
+                      onChange={(value) =>
+                        setIntegrationTest((next) => ({
+                          ...next,
+                          apiKey: value,
+                        }))
+                      }
+                      placeholder="Optional"
+                    />
+                    <TextField
+                      labelText="Test subject"
+                      value={integrationTest.subject}
+                      onChange={(value) =>
+                        setIntegrationTest((next) => ({
+                          ...next,
+                          subject: value,
+                        }))
+                      }
+                      placeholder="Integration smoke alert"
+                    />
+                    <button
+                      type="submit"
+                      disabled={isPending}
+                      className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-amber-950 px-3 text-sm font-semibold text-white shadow-sm disabled:opacity-60"
+                    >
+                      <RadioTower className="h-4 w-4" />
+                      Send test alert
+                    </button>
+                  </form>
+                  <div className="mt-3 grid gap-2">
                     <button
                       type="button"
                       onClick={copyWebhookUrl}

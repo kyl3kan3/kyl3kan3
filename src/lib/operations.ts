@@ -1,4 +1,9 @@
 import { randomUUID } from "node:crypto";
+import {
+  addDemoTicketComment,
+  createDemoTicket,
+  updateDemoTicket,
+} from "./demo-store";
 import { getSql, hasDatabaseUrl } from "./db";
 import type { Priority, TicketStatus } from "./types";
 
@@ -49,12 +54,6 @@ export type AddCommentInput = {
   body: string;
   authorEmail?: string | null;
 };
-
-function assertDatabaseConfigured() {
-  if (!hasDatabaseUrl()) {
-    throw new Error("DATABASE_URL is not configured");
-  }
-}
 
 function cleanString(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
@@ -181,7 +180,9 @@ export function parseUpdateTicketInput(payload: Record<string, unknown>) {
 }
 
 export async function createTicket(input: CreateTicketInput) {
-  assertDatabaseConfigured();
+  if (!hasDatabaseUrl()) {
+    return createDemoTicket(input);
+  }
 
   const sql = getSql();
   const orgId = await ensureDefaultOrg();
@@ -272,7 +273,9 @@ export async function createTicket(input: CreateTicketInput) {
 }
 
 export async function updateTicket(ticketId: string, input: UpdateTicketInput) {
-  assertDatabaseConfigured();
+  if (!hasDatabaseUrl()) {
+    return updateDemoTicket(ticketId, input);
+  }
 
   const sql = getSql();
   const current = await findTicket(ticketId);
@@ -376,7 +379,9 @@ export async function updateTicket(ticketId: string, input: UpdateTicketInput) {
 }
 
 export async function addTicketComment(ticketId: string, input: AddCommentInput) {
-  assertDatabaseConfigured();
+  if (!hasDatabaseUrl()) {
+    return addDemoTicketComment(ticketId, input);
+  }
 
   const body = cleanString(input.body);
   if (!body) {

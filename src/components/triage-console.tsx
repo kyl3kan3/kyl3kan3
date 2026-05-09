@@ -7,23 +7,29 @@ import {
   CheckCircle2,
   CircleDot,
   Clock3,
-  Database,
   Gauge,
   Inbox,
-  Layers3,
   MessageSquarePlus,
   Plus,
   RadioTower,
   RotateCcw,
   Search,
   Send,
+  Settings,
   ShieldCheck,
   SlidersHorizontal,
   Sparkles,
   Users,
+  X,
   XCircle,
 } from "lucide-react";
-import { useMemo, useRef, useState, useTransition } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
 import type { FormEvent, ReactNode, RefObject } from "react";
 import type {
   DashboardData,
@@ -107,6 +113,24 @@ const metricAccent: Record<
 };
 
 type FilterStatus = "active" | "all" | TicketStatus;
+
+type DraftTicket = {
+  title: string;
+  description: string;
+  reporterEmail: string;
+  priority: Priority;
+  assignedTeamId: string;
+  assignedUserId: string;
+};
+
+const emptyDraft: DraftTicket = {
+  title: "",
+  description: "",
+  reporterEmail: "",
+  priority: "P3",
+  assignedTeamId: "",
+  assignedUserId: "",
+};
 
 function formatDateTime(value: string) {
   return new Intl.DateTimeFormat("en", {
@@ -371,6 +395,181 @@ function EmptyState() {
   );
 }
 
+function NewTicketModal({
+  isOpen,
+  onClose,
+  data,
+  onSubmit,
+  isPending,
+  canMutate,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  data: DashboardData;
+  onSubmit: (draft: DraftTicket) => void;
+  isPending: boolean;
+  canMutate: boolean;
+}) {
+  const [draft, setDraft] = useState<DraftTicket>(emptyDraft);
+  const titleRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setDraft(emptyDraft);
+    const focusTimeout = window.setTimeout(() => titleRef.current?.focus(), 50);
+    return () => window.clearTimeout(focusTimeout);
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handler = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [isOpen, onClose]);
+
+  if (!isOpen) return null;
+
+  const draftTeamUsers = usersForTeam(data.users, draft.assignedTeamId || null);
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    onSubmit(draft);
+  }
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="new-ticket-title"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-stone-950/40 p-4 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        className="surface-card max-h-[calc(100vh-2rem)] w-full max-w-md overflow-y-auto p-6"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="mb-4 flex items-start justify-between gap-3">
+          <div>
+            <h2
+              id="new-ticket-title"
+              className="text-[15px] font-semibold tracking-tight text-stone-950"
+            >
+              New ticket
+            </h2>
+            <p className="text-[12.5px] text-stone-500">Create a live ticket</p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-stone-500 transition hover:bg-stone-100 hover:text-stone-900"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <TextField
+            labelText="Title"
+            inputRef={titleRef}
+            value={draft.title}
+            onChange={(value) => setDraft((next) => ({ ...next, title: value }))}
+            placeholder="Short incident title"
+          />
+          <label className="grid min-w-0 gap-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-stone-500">
+            Description
+            <textarea
+              value={draft.description}
+              onChange={(event) =>
+                setDraft((next) => ({
+                  ...next,
+                  description: event.target.value,
+                }))
+              }
+              rows={4}
+              placeholder="What happened?"
+              className="input-field w-full min-w-0 resize-none px-3 py-2.5 text-sm normal-case tracking-normal text-stone-900 placeholder:text-stone-400"
+            />
+          </label>
+          <div className="grid grid-cols-2 gap-3">
+            <SelectField
+              labelText="Priority"
+              value={draft.priority}
+              onChange={(value) =>
+                setDraft((next) => ({ ...next, priority: value as Priority }))
+              }
+            >
+              {priorities.map((priority) => (
+                <option key={priority} value={priority}>
+                  {priority}
+                </option>
+              ))}
+            </SelectField>
+            <TextField
+              labelText="Reporter"
+              value={draft.reporterEmail}
+              onChange={(value) =>
+                setDraft((next) => ({ ...next, reporterEmail: value }))
+              }
+              placeholder="email"
+            />
+            <SelectField
+              labelText="Team"
+              value={draft.assignedTeamId}
+              onChange={(value) =>
+                setDraft((next) => ({
+                  ...next,
+                  assignedTeamId: value,
+                  assignedUserId: "",
+                }))
+              }
+            >
+              <option value="">Unrouted</option>
+              {data.teams.map((team) => (
+                <option key={team.id} value={team.id}>
+                  {team.name}
+                </option>
+              ))}
+            </SelectField>
+            <SelectField
+              labelText="Owner"
+              value={draft.assignedUserId}
+              onChange={(value) =>
+                setDraft((next) => ({ ...next, assignedUserId: value }))
+              }
+            >
+              <option value="">Unassigned</option>
+              {draftTeamUsers.map((user) => (
+                <option key={user.id} value={user.id}>
+                  {user.fullName ?? user.email}
+                </option>
+              ))}
+            </SelectField>
+          </div>
+          <div className="grid grid-cols-2 gap-3 pt-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="btn-soft inline-flex h-11 items-center justify-center gap-2 rounded-xl px-3 text-sm font-semibold"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={!draft.title.trim() || isPending || !canMutate}
+              className="btn-primary inline-flex h-11 items-center justify-center gap-2 rounded-xl px-3 text-sm font-semibold disabled:opacity-60"
+            >
+              <Send className="h-4 w-4" />
+              Create ticket
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 export function TriageConsole({ initialData }: { initialData: DashboardData }) {
   const [data, setData] = useState(initialData);
   const [selectedId, setSelectedId] = useState(initialData.tickets[0]?.id ?? "");
@@ -381,26 +580,11 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
   const [showBreachedOnly, setShowBreachedOnly] = useState(false);
   const [comment, setComment] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
+  const [isNewTicketOpen, setIsNewTicketOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
   const queueRef = useRef<HTMLElement | null>(null);
   const detailRef = useRef<HTMLElement | null>(null);
-  const intakeRef = useRef<HTMLElement | null>(null);
-  const teamRef = useRef<HTMLElement | null>(null);
-  const setupRef = useRef<HTMLElement | null>(null);
-  const manualTitleRef = useRef<HTMLInputElement | null>(null);
-  const [draft, setDraft] = useState({
-    title: "",
-    description: "",
-    reporterEmail: "",
-    priority: "P3" as Priority,
-    assignedTeamId: "",
-    assignedUserId: "",
-  });
-  const [integrationTest, setIntegrationTest] = useState({
-    webhookUrl: "",
-    apiKey: "",
-    subject: "Integration smoke alert",
-  });
+  const teamRef = useRef<HTMLDivElement | null>(null);
 
   const nowMs = new Date(data.refreshedAt).getTime();
   const activeTickets = data.tickets.filter(isActive).length;
@@ -449,31 +633,6 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
     }
 
     scrollToSection(queueRef);
-  }
-
-  function focusManualIntake() {
-    scrollToSection(intakeRef);
-    window.setTimeout(() => manualTitleRef.current?.focus(), 300);
-  }
-
-  async function copyText(value: string, labelText: string) {
-    try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(value);
-      } else {
-        const textArea = document.createElement("textarea");
-        textArea.value = value;
-        textArea.style.position = "fixed";
-        textArea.style.opacity = "0";
-        document.body.appendChild(textArea);
-        textArea.select();
-        document.execCommand("copy");
-        document.body.removeChild(textArea);
-      }
-      setNotice(`${labelText} copied`);
-    } catch {
-      setNotice(`${labelText}: ${value}`);
-    }
   }
 
   const filteredTickets = useMemo(() => {
@@ -553,57 +712,6 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
     return `Health ok: database ${result.database ?? "unknown"}`;
   }
 
-  function copyWebhookUrl() {
-    void copyText(
-      `${window.location.origin}/api/webhooks/inbound-email`,
-      "Webhook URL",
-    );
-  }
-
-  function copyWebhookExample() {
-    const payload = {
-      source: "monitor",
-      id: "alert-123",
-      from: "alerts@example.com",
-      subject: "Checkout latency above threshold",
-      body: "Customer-facing checkout latency is breaching SLA.",
-      service: "checkout-api",
-      severity: "critical",
-    };
-
-    void copyText(JSON.stringify(payload, null, 2), "Webhook example");
-  }
-
-  async function testIntegration() {
-    const response = await fetch("/api/integration-test", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(integrationTest),
-    });
-    const result = (await response.json()) as {
-      ok?: boolean;
-      error?: string;
-      status?: number;
-      ticketId?: string | null;
-      ticketNumber?: string | null;
-    };
-
-    if (!response.ok || !result.ok) {
-      const status = result.status ? ` (${result.status})` : "";
-      throw new Error(`${result.error ?? "Integration test failed"}${status}`);
-    }
-
-    await refresh(result.ticketId ?? undefined);
-    return result.ticketNumber
-      ? `Test alert created TK-${result.ticketNumber}`
-      : "Webhook test accepted";
-  }
-
-  function submitIntegrationTest(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    runMutation(testIntegration);
-  }
-
   async function patchTicket(ticketId: string, payload: Record<string, unknown>) {
     const response = await fetch(`/api/tickets/${ticketId}`, {
       method: "PATCH",
@@ -619,37 +727,33 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
     await refresh(ticketId);
   }
 
-  function createManualTicket(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function createTicket(draft: DraftTicket) {
+    const response = await fetch("/api/tickets", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ...draft,
+        assignedTeamId: draft.assignedTeamId || null,
+        assignedUserId: draft.assignedUserId || null,
+      }),
+    });
+
+    const result = (await response.json()) as {
+      ticket?: { id: string };
+      error?: string;
+    };
+
+    if (!response.ok || !result.ticket) {
+      throw new Error(result.error ?? "Unable to create ticket");
+    }
+
+    await refresh(result.ticket.id);
+  }
+
+  function submitNewTicket(draft: DraftTicket) {
     runMutation(async () => {
-      const response = await fetch("/api/tickets", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...draft,
-          assignedTeamId: draft.assignedTeamId || null,
-          assignedUserId: draft.assignedUserId || null,
-        }),
-      });
-
-      const result = (await response.json()) as {
-        ticket?: { id: string };
-        error?: string;
-      };
-
-      if (!response.ok || !result.ticket) {
-        throw new Error(result.error ?? "Unable to create ticket");
-      }
-
-      setDraft({
-        title: "",
-        description: "",
-        reporterEmail: "",
-        priority: "P3",
-        assignedTeamId: "",
-        assignedUserId: "",
-      });
-      await refresh(result.ticket.id);
+      await createTicket(draft);
+      setIsNewTicketOpen(false);
       return "Ticket created";
     });
   }
@@ -680,7 +784,6 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
     data.users,
     selectedTicket?.assignedTeamId ?? null,
   );
-  const draftTeamUsers = usersForTeam(data.users, draft.assignedTeamId || null);
 
   return (
     <main className="min-h-screen overflow-x-hidden text-stone-900">
@@ -719,22 +822,37 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
               </button>
               <button
                 type="button"
-                onClick={() => scrollToSection(setupRef)}
+                onClick={() => setIsNewTicketOpen(true)}
                 className="group relative flex h-11 w-11 items-center justify-center rounded-xl text-stone-300 transition hover:bg-white/10 hover:text-white"
-                aria-label="Go to setup"
-                title="Setup"
+                aria-label="New ticket"
+                title="New ticket"
               >
-                <Database className="h-5 w-5" />
+                <Plus className="h-5 w-5" />
               </button>
               <button
                 type="button"
-                onClick={() => scrollToSection(teamRef)}
+                onClick={() => {
+                  if (teamRef.current) {
+                    teamRef.current.scrollIntoView({
+                      behavior: "smooth",
+                      block: "start",
+                    });
+                  }
+                }}
                 className="group relative flex h-11 w-11 items-center justify-center rounded-xl text-stone-300 transition hover:bg-white/10 hover:text-white"
-                aria-label="Go to teams"
+                aria-label="Go to team load"
                 title="Teams"
               >
                 <Users className="h-5 w-5" />
               </button>
+              <a
+                href="/settings"
+                className="group relative flex h-11 w-11 items-center justify-center rounded-xl text-stone-300 transition hover:bg-white/10 hover:text-white"
+                aria-label="Settings"
+                title="Settings"
+              >
+                <Settings className="h-5 w-5" />
+              </a>
             </div>
           </div>
           <div className="grid gap-3">
@@ -775,7 +893,7 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
                   </h1>
                 </div>
               </div>
-              <div className="grid w-[calc(100vw-2rem)] max-w-full grid-cols-1 gap-2 sm:flex sm:w-full sm:flex-wrap sm:items-center xl:w-auto">
+              <div className="flex w-full flex-wrap items-center gap-2 xl:w-auto">
                 <button
                   type="button"
                   onClick={() => runMutation(checkHealth)}
@@ -793,13 +911,21 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
                   <ShieldCheck className="h-4 w-4" />
                   {isLive ? "Neon live" : "Demo data"}
                 </button>
-                <button
-                  type="button"
-                  onClick={() => scrollToSection(setupRef)}
+                <a
+                  href="/settings"
                   className="inline-flex h-10 items-center justify-center gap-2 rounded-full border border-stone-200 bg-white/80 px-3.5 text-[12.5px] font-semibold text-stone-700 backdrop-blur transition hover:bg-white"
                 >
-                  <Layers3 className="h-4 w-4 text-amber-600" />
-                  Integrations pending
+                  <Settings className="h-4 w-4" />
+                  Settings
+                </a>
+                <button
+                  type="button"
+                  onClick={() => setIsNewTicketOpen(true)}
+                  disabled={!canMutate}
+                  className="btn-soft inline-flex h-10 items-center justify-center gap-2 rounded-full px-4 text-[12.5px] font-semibold disabled:opacity-60"
+                >
+                  <Plus className="h-4 w-4" />
+                  New ticket
                 </button>
                 <button
                   type="button"
@@ -843,7 +969,64 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
               ))}
             </div>
 
-            <div className="mt-6 grid gap-5 xl:grid-cols-[400px_minmax(0,1fr)_360px]">
+            {data.teamLoad.length > 0 ? (
+              <div
+                ref={teamRef}
+                className="fancy-scroll mt-4 flex gap-2 overflow-x-auto pb-1"
+              >
+                {data.teamLoad.map((team) => {
+                  const teamOption = data.teams.find(
+                    (item) => item.name === team.team,
+                  );
+                  const isActiveFilter = teamOption
+                    ? teamFilter === teamOption.id
+                    : false;
+                  return (
+                    <button
+                      key={team.team}
+                      type="button"
+                      disabled={!teamOption}
+                      onClick={() => {
+                        if (!teamOption) return;
+                        setTeamFilter(isActiveFilter ? "all" : teamOption.id);
+                        setStatusFilter("active");
+                        setPriorityFilter("all");
+                        setShowBreachedOnly(false);
+                        scrollToSection(queueRef);
+                      }}
+                      className={`shrink-0 rounded-xl border px-3 py-2 text-left transition disabled:opacity-60 ${
+                        isActiveFilter
+                          ? "border-stone-900 bg-stone-900 text-white"
+                          : "border-stone-200 bg-white text-stone-900 hover:border-stone-300"
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 text-[12.5px] font-semibold tracking-tight">
+                        <Users className="h-3.5 w-3.5 opacity-70" />
+                        {team.team}
+                      </div>
+                      <div className="mt-1 flex items-center gap-2 text-[11px]">
+                        <span className="tabular-nums opacity-80">
+                          {team.openTickets} open
+                        </span>
+                        {team.urgentTickets > 0 ? (
+                          <span
+                            className={`rounded px-1.5 py-0.5 font-semibold tabular-nums ${
+                              isActiveFilter
+                                ? "bg-red-300/20 text-red-100"
+                                : "bg-red-50 text-red-700"
+                            }`}
+                          >
+                            {team.urgentTickets} urgent
+                          </span>
+                        ) : null}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : null}
+
+            <div className="mt-6 grid gap-5 xl:grid-cols-[400px_minmax(0,1fr)]">
               <section
                 id="triage-queue"
                 ref={queueRef}
@@ -982,13 +1165,7 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
                             <span className="rounded-md bg-white/10 px-2 py-1 font-mono text-[11px] tracking-wide text-stone-200 ring-1 ring-white/10">
                               TK-{selectedTicket.ticketNumber}
                             </span>
-                            <span
-                              className={`inline-flex h-7 items-center rounded-md bg-white/8 px-2 text-[11px] font-semibold capitalize text-stone-100 ring-1 ring-white/10 ${
-                                selectedTicket.status === "in_progress"
-                                  ? "text-amber-200"
-                                  : ""
-                              }`}
-                            >
+                            <span className="inline-flex h-7 items-center rounded-md bg-white/10 px-2 text-[11px] font-semibold capitalize text-stone-100 ring-1 ring-white/10">
                               {label(selectedTicket.status)}
                             </span>
                           </div>
@@ -998,40 +1175,26 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
                           <p className="mt-3 max-w-3xl text-[14px] leading-6 text-stone-300/90">
                             {selectedTicket.description || "No description yet."}
                           </p>
+                          <p className="mt-3 text-[12px] text-stone-400">
+                            Reported by{" "}
+                            <span className="font-medium text-stone-200">
+                              {selectedTicket.reporterEmail ?? "system alert"}
+                            </span>
+                            {" · "}
+                            <span className="tabular-nums">
+                              {formatDateTime(selectedTicket.createdAt)}
+                            </span>
+                          </p>
                         </div>
-                        <div className="rounded-xl border border-white/10 bg-white/[0.04] p-3.5 backdrop-blur">
+                        <div className="rounded-xl border border-white/10 bg-white/[0.04] p-3 backdrop-blur">
                           <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-stone-400">
                             Last refresh
                           </p>
-                          <p className="mt-1 text-[13px] font-semibold tabular-nums">
+                          <p className="mt-1 text-[12.5px] font-semibold tabular-nums">
                             {formatDateTime(data.refreshedAt)}
                           </p>
                         </div>
                       </div>
-                    </div>
-
-                    <div className="grid gap-3 border-b border-stone-200/70 bg-gradient-to-b from-stone-50 to-white p-5 md:grid-cols-4">
-                      {[
-                        ["Status", label(selectedTicket.status)],
-                        ["Owner", selectedTicket.assignee],
-                        ["Team", selectedTicket.team],
-                        [
-                          "Reporter",
-                          selectedTicket.reporterEmail ?? "system alert",
-                        ],
-                      ].map(([title, value]) => (
-                        <div
-                          key={title}
-                          className="rounded-xl border border-stone-200/70 bg-white p-3 shadow-sm"
-                        >
-                          <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-stone-400">
-                            {title}
-                          </p>
-                          <p className="mt-1 truncate text-[13.5px] font-semibold capitalize text-stone-900">
-                            {value}
-                          </p>
-                        </div>
-                      ))}
                     </div>
 
                     <div className="p-6">
@@ -1297,290 +1460,25 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
                         Select or create a ticket
                       </p>
                       <p className="mt-1 text-sm text-stone-500">
-                        Choose one from the queue, or use manual intake.
+                        Choose one from the queue, or click New ticket above.
                       </p>
                     </div>
                   </div>
                 )}
               </section>
-
-              <aside className="space-y-5">
-                <section
-                  id="manual-intake"
-                  ref={intakeRef}
-                  className="surface-card scroll-mt-24 p-5"
-                >
-                  <div className="mb-4 flex items-center justify-between">
-                    <div>
-                      <h2 className="text-[15px] font-semibold tracking-tight text-stone-950">
-                        Manual intake
-                      </h2>
-                      <p className="text-[12.5px] text-stone-500">
-                        Create a live ticket
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={focusManualIntake}
-                      className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-stone-900 to-stone-700 text-white shadow-md ring-1 ring-black/10 transition hover:scale-105"
-                      aria-label="Focus manual intake"
-                      title="New ticket"
-                    >
-                      <Plus className="h-4 w-4" />
-                    </button>
-                  </div>
-                  <form onSubmit={createManualTicket} className="space-y-3">
-                    <TextField
-                      labelText="Title"
-                      inputRef={manualTitleRef}
-                      value={draft.title}
-                      onChange={(value) =>
-                        setDraft((next) => ({ ...next, title: value }))
-                      }
-                      placeholder="Short incident title"
-                    />
-                    <label className="grid min-w-0 gap-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-stone-500">
-                      Description
-                      <textarea
-                        value={draft.description}
-                        onChange={(event) =>
-                          setDraft((next) => ({
-                            ...next,
-                            description: event.target.value,
-                          }))
-                        }
-                        rows={4}
-                        placeholder="What happened?"
-                        className="input-field w-full min-w-0 resize-none px-3 py-2.5 text-sm normal-case tracking-normal text-stone-900 placeholder:text-stone-400"
-                      />
-                    </label>
-                    <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-3">
-                      <SelectField
-                        labelText="Priority"
-                        value={draft.priority}
-                        onChange={(value) =>
-                          setDraft((next) => ({
-                            ...next,
-                            priority: value as Priority,
-                          }))
-                        }
-                      >
-                        {priorities.map((priority) => (
-                          <option key={priority} value={priority}>
-                            {priority}
-                          </option>
-                        ))}
-                      </SelectField>
-                      <TextField
-                        labelText="Reporter"
-                        value={draft.reporterEmail}
-                        onChange={(value) =>
-                          setDraft((next) => ({ ...next, reporterEmail: value }))
-                        }
-                        placeholder="email"
-                      />
-                      <SelectField
-                        labelText="Team"
-                        value={draft.assignedTeamId}
-                        onChange={(value) =>
-                          setDraft((next) => ({
-                            ...next,
-                            assignedTeamId: value,
-                            assignedUserId: "",
-                          }))
-                        }
-                      >
-                        <option value="">Unrouted</option>
-                        {data.teams.map((team) => (
-                          <option key={team.id} value={team.id}>
-                            {team.name}
-                          </option>
-                        ))}
-                      </SelectField>
-                      <SelectField
-                        labelText="Owner"
-                        value={draft.assignedUserId}
-                        onChange={(value) =>
-                          setDraft((next) => ({ ...next, assignedUserId: value }))
-                        }
-                      >
-                        <option value="">Unassigned</option>
-                        {draftTeamUsers.map((user) => (
-                          <option key={user.id} value={user.id}>
-                            {user.fullName ?? user.email}
-                          </option>
-                        ))}
-                      </SelectField>
-                    </div>
-                    <button
-                      type="submit"
-                      disabled={!draft.title.trim() || isPending || !canMutate}
-                      className="btn-primary inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl px-3 text-sm font-semibold disabled:opacity-60"
-                    >
-                      <Send className="h-4 w-4" />
-                      Create ticket
-                    </button>
-                  </form>
-                </section>
-
-                <section
-                  id="team-load"
-                  ref={teamRef}
-                  className="surface-card scroll-mt-24 p-5"
-                >
-                  <div className="mb-4 flex items-center justify-between">
-                    <h2 className="text-[15px] font-semibold tracking-tight text-stone-950">
-                      Team load
-                    </h2>
-                    <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-sky-500 to-sky-700 text-white shadow-md ring-1 ring-black/10">
-                      <Users className="h-4 w-4" />
-                    </div>
-                  </div>
-                  <div className="space-y-4">
-                    {data.teamLoad.map((team) => {
-                      const width = Math.min(
-                        100,
-                        Math.max(12, team.openTickets * 18),
-                      );
-                      const tone =
-                        width > 75
-                          ? "from-red-500 to-red-700"
-                          : width > 50
-                            ? "from-amber-400 to-amber-600"
-                            : "from-stone-700 to-stone-900";
-                      const teamOption = data.teams.find(
-                        (item) => item.name === team.team,
-                      );
-                      return (
-                        <button
-                          key={team.team}
-                          type="button"
-                          onClick={() => {
-                            if (teamOption) {
-                              setTeamFilter(teamOption.id);
-                              setStatusFilter("active");
-                              setPriorityFilter("all");
-                              setShowBreachedOnly(false);
-                              scrollToSection(queueRef);
-                            }
-                          }}
-                          className="w-full rounded-xl p-2 text-left transition hover:bg-stone-50"
-                        >
-                          <div className="mb-2 flex items-center justify-between text-[13px]">
-                            <span className="font-semibold tracking-tight text-stone-900">
-                              {team.team}
-                            </span>
-                            <span className="text-stone-500 tabular-nums">
-                              {team.openTickets} open
-                            </span>
-                          </div>
-                          <div className="relative h-2 overflow-hidden rounded-full bg-stone-100 ring-1 ring-stone-200/60">
-                            <div
-                              className={`h-2 rounded-full bg-gradient-to-r ${tone} shadow-[0_0_12px_rgba(0,0,0,0.08)] transition-all duration-500`}
-                              style={{ width: `${width}%` }}
-                            />
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </section>
-
-                <section
-                  id="setup"
-                  ref={setupRef}
-                  className="scroll-mt-24 relative overflow-hidden rounded-2xl border border-amber-200/70 bg-gradient-to-br from-amber-50 via-amber-100/70 to-amber-50 p-5 text-amber-950 shadow-[0_8px_24px_-16px_rgba(180,83,9,0.4)]"
-                >
-                  <div className="pointer-events-none absolute -right-10 -top-10 h-32 w-32 rounded-full bg-amber-300/40 blur-2xl" />
-                  <div className="relative flex items-center gap-3">
-                    <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-300 to-amber-500 text-amber-950 shadow-md ring-1 ring-amber-600/20">
-                      <Database className="h-5 w-5" />
-                    </div>
-                    <div>
-                      <h2 className="text-[15px] font-semibold tracking-tight">
-                        Final setup queue
-                      </h2>
-                      <p className="text-[12.5px] text-amber-800">
-                        Provider webhooks & API keys
-                      </p>
-                    </div>
-                  </div>
-                  <form onSubmit={submitIntegrationTest} className="mt-4 grid gap-3">
-                    <TextField
-                      labelText="Webhook URL"
-                      value={integrationTest.webhookUrl}
-                      onChange={(value) =>
-                        setIntegrationTest((next) => ({
-                          ...next,
-                          webhookUrl: value,
-                        }))
-                      }
-                      placeholder="/api/webhooks/inbound-email"
-                    />
-                    <TextField
-                      labelText="API key or secret"
-                      type="password"
-                      value={integrationTest.apiKey}
-                      onChange={(value) =>
-                        setIntegrationTest((next) => ({
-                          ...next,
-                          apiKey: value,
-                        }))
-                      }
-                      placeholder="Optional"
-                    />
-                    <TextField
-                      labelText="Test subject"
-                      value={integrationTest.subject}
-                      onChange={(value) =>
-                        setIntegrationTest((next) => ({
-                          ...next,
-                          subject: value,
-                        }))
-                      }
-                      placeholder="Integration smoke alert"
-                    />
-                    <button
-                      type="submit"
-                      disabled={isPending}
-                      className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-amber-950 px-3 text-sm font-semibold text-white shadow-sm disabled:opacity-60"
-                    >
-                      <RadioTower className="h-4 w-4" />
-                      Send test alert
-                    </button>
-                  </form>
-                  <div className="mt-3 grid gap-2">
-                    <button
-                      type="button"
-                      onClick={copyWebhookUrl}
-                      className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-zinc-950 px-3 text-sm font-semibold text-white shadow-sm"
-                    >
-                      <Send className="h-4 w-4" />
-                      Copy webhook URL
-                    </button>
-                    <button
-                      type="button"
-                      onClick={copyWebhookExample}
-                      className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-amber-200 bg-white px-3 text-sm font-semibold text-amber-900 shadow-sm"
-                    >
-                      <Layers3 className="h-4 w-4" />
-                      Copy test payload
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => runMutation(checkHealth)}
-                      className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-amber-200 bg-white px-3 text-sm font-semibold text-amber-900 shadow-sm"
-                    >
-                      <ShieldCheck className="h-4 w-4" />
-                      Check database
-                    </button>
-                  </div>
-                </section>
-              </aside>
             </div>
           </section>
         </div>
       </div>
+
+      <NewTicketModal
+        isOpen={isNewTicketOpen}
+        onClose={() => setIsNewTicketOpen(false)}
+        data={data}
+        onSubmit={submitNewTicket}
+        isPending={isPending}
+        canMutate={canMutate}
+      />
 
       {notice ? (
         <div className="fixed bottom-5 left-1/2 z-50 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 rounded-2xl border border-stone-200 bg-white/95 px-4 py-3 text-sm font-semibold text-stone-800 shadow-[0_24px_48px_-24px_rgba(20,14,5,0.45)] backdrop-blur">

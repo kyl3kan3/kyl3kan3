@@ -135,6 +135,92 @@ function stringList(value: unknown): string[] {
   return single ? [single] : [];
 }
 
+const SUBJECT_KEYS = new Set(["subject"]);
+const FROM_KEYS = new Set([
+  "from",
+  "sender",
+  "fromaddress",
+  "from_address",
+  "senderemail",
+  "sender_email",
+]);
+const TEXT_KEYS = new Set([
+  "text",
+  "textbody",
+  "text_body",
+  "plain",
+  "plaintext",
+  "plain_text",
+  "plainbody",
+  "plain_body",
+  "bodytext",
+  "body_text",
+  "stripped_text",
+  "strippedtext",
+  "strippedtextreply",
+  "body-plain",
+]);
+const HTML_KEYS = new Set([
+  "html",
+  "htmlbody",
+  "html_body",
+  "bodyhtml",
+  "body_html",
+  "body-html",
+]);
+const RECIPIENT_KEYS = new Set(["to", "recipient", "recipients", "destination"]);
+const DEEP_SEARCH_SKIP = new Set(["attachments", "headers", "raw_payload"]);
+
+function deepFindFirst(
+  payload: unknown,
+  keys: ReadonlySet<string>,
+  visited: WeakSet<object> = new WeakSet(),
+): unknown {
+  if (!payload || typeof payload !== "object") return undefined;
+  if (visited.has(payload as object)) return undefined;
+  visited.add(payload as object);
+
+  if (Array.isArray(payload)) {
+    for (const entry of payload) {
+      const found = deepFindFirst(entry, keys, visited);
+      if (found !== undefined) return found;
+    }
+    return undefined;
+  }
+
+  const record = payload as Record<string, unknown>;
+  for (const [key, value] of Object.entries(record)) {
+    if (
+      keys.has(key.toLowerCase()) &&
+      value !== null &&
+      value !== undefined &&
+      value !== ""
+    ) {
+      return value;
+    }
+  }
+  for (const [key, value] of Object.entries(record)) {
+    if (DEEP_SEARCH_SKIP.has(key.toLowerCase())) continue;
+    const found = deepFindFirst(value, keys, visited);
+    if (found !== undefined) return found;
+  }
+  return undefined;
+}
+
+function deepFindString(payload: unknown, keys: ReadonlySet<string>) {
+  const value = deepFindFirst(payload, keys);
+  if (typeof value === "string" && value.trim().length > 0) {
+    return value.trim();
+  }
+  return "";
+}
+
+function deepFindList(payload: unknown, keys: ReadonlySet<string>) {
+  const value = deepFindFirst(payload, keys);
+  if (value === undefined) return [];
+  return stringList(value);
+}
+
 function formValue(value: FormDataEntryValue) {
   if (typeof value === "string") return value;
 
@@ -231,7 +317,7 @@ async function enrichPayload(payload: Record<string, unknown>) {
 }
 
 function recipientEmails(payload: Record<string, unknown>) {
-  return [
+  const direct = [
     ...stringList(atPath(payload, ["data", "to"])),
     ...stringList(atPath(payload, ["receivedEmail", "to"])),
     ...stringList(payload.to),
@@ -240,6 +326,8 @@ function recipientEmails(payload: Record<string, unknown>) {
     ...stringList(payload.recipients),
     ...stringList(payload.envelope),
   ];
+  if (direct.length > 0) return direct;
+  return deepFindList(payload, RECIPIENT_KEYS);
 }
 
 function classifyEmail(
@@ -270,13 +358,14 @@ function classifyEmail(
 }
 
 function normalizeAlert(payload: Record<string, unknown>): NormalizedAlert {
-  const htmlBody = firstText(
-    atPath(payload, ["data", "html"]),
-    atPath(payload, ["receivedEmail", "html"]),
-    payload.html,
-    payload.HtmlBody,
-    payload["body-html"],
-  );
+  const htmlBody =
+    firstText(
+      atPath(payload, ["data", "html"]),
+      atPath(payload, ["receivedEmail", "html"]),
+      payload.html,
+      payload.HtmlBody,
+      payload["body-html"],
+    ) || deepFindString(payload, HTML_KEYS);
   const bodyText =
     firstText(
       atPath(payload, ["data", "text"]),
@@ -287,15 +376,19 @@ function normalizeAlert(payload: Record<string, unknown>): NormalizedAlert {
       payload.bodyText,
       payload.body,
       payload["body-plain"],
-    ) || stripHtml(htmlBody);
+    ) ||
+    deepFindString(payload, TEXT_KEYS) ||
+    stripHtml(htmlBody);
   const recipients = recipientEmails(payload);
-  const subject = firstText(
-    atPath(payload, ["data", "subject"]),
-    atPath(payload, ["receivedEmail", "subject"]),
-    payload.subject,
-    payload.Subject,
-    "Untitled alert",
-  );
+  const subject =
+    firstText(
+      atPath(payload, ["data", "subject"]),
+      atPath(payload, ["receivedEmail", "subject"]),
+      payload.subject,
+      payload.Subject,
+    ) ||
+    deepFindString(payload, SUBJECT_KEYS) ||
+    "Untitled alert";
   const createdFrom = classifyEmail(payload, subject, bodyText);
 
   return {
@@ -324,7 +417,7 @@ function normalizeAlert(payload: Record<string, unknown>): NormalizedAlert {
           payload.From,
           payload.sender,
           payload.senderEmail,
-        ),
+        ) || deepFindString(payload, FROM_KEYS),
       ) || null,
     recipientEmail: recipients[0] ?? null,
     subject,

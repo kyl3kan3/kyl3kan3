@@ -35,6 +35,38 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
+function parseJsonRecord(value: unknown) {
+  if (!text(value)) return null;
+
+  try {
+    const parsed = JSON.parse(text(value));
+    return isRecord(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function unwrapPayload(payload: Record<string, unknown>) {
+  const candidates = [
+    payload,
+    isRecord(payload.payload) ? payload.payload : null,
+    isRecord(payload.body) ? payload.body : null,
+    isRecord(payload.event) ? payload.event : null,
+    isRecord(payload.record) ? payload.record : null,
+    parseJsonRecord(payload.payload),
+    parseJsonRecord(payload.body),
+    parseJsonRecord(payload.event),
+    parseJsonRecord(payload.record),
+  ].filter(isRecord);
+
+  return (
+    candidates.find(
+      (candidate) =>
+        text(candidate.type) === "email.received" || isRecord(candidate.data),
+    ) ?? payload
+  );
+}
+
 function atPath(payload: Record<string, unknown>, path: string[]) {
   let current: unknown = payload;
 
@@ -140,12 +172,18 @@ async function readPayload(request: Request) {
 }
 
 async function enrichPayload(payload: Record<string, unknown>) {
-  const eventType = text(payload.type);
-  const emailId = text(atPath(payload, ["data", "email_id"]));
+  const eventPayload = unwrapPayload(payload);
+  const eventType = text(eventPayload.type);
+  const emailId = firstText(
+    atPath(eventPayload, ["data", "email_id"]),
+    atPath(eventPayload, ["data", "id"]),
+    eventPayload.email_id,
+    eventPayload.emailId,
+  );
   const apiKey = process.env.RESEND_API_KEY?.trim();
 
   if (eventType !== "email.received" || !emailId || !apiKey) {
-    return payload;
+    return eventPayload;
   }
 
   const response = await fetch(
@@ -159,19 +197,31 @@ async function enrichPayload(payload: Record<string, unknown>) {
   );
 
   if (!response.ok) {
-    return payload;
+    console.warn("resend_received_email_fetch_failed", {
+      status: response.status,
+      eventType,
+      hasEmailId: Boolean(emailId),
+    });
+    return eventPayload;
   }
 
   const responseBody = (await response.json()) as Record<string, unknown>;
   const receivedEmail = isRecord(responseBody.data)
     ? responseBody.data
     : responseBody;
-  const data = isRecord(payload.data) ? payload.data : {};
+  const data = isRecord(eventPayload.data) ? eventPayload.data : {};
 
   return {
-    ...payload,
+    ...eventPayload,
     data: {
       ...data,
+      email_id: firstText(data.email_id, receivedEmail.id, emailId),
+      message_id: firstText(data.message_id, receivedEmail.message_id),
+      subject: firstText(data.subject, receivedEmail.subject),
+      from: firstText(data.from, receivedEmail.from),
+      to: data.to ?? receivedEmail.to,
+      cc: data.cc ?? receivedEmail.cc,
+      bcc: data.bcc ?? receivedEmail.bcc,
       text: firstText(data.text, receivedEmail.text, receivedEmail.text_body),
       html: firstText(data.html, receivedEmail.html, receivedEmail.html_body),
       headers: receivedEmail.headers,
@@ -183,6 +233,7 @@ async function enrichPayload(payload: Record<string, unknown>) {
 function recipientEmails(payload: Record<string, unknown>) {
   return [
     ...stringList(atPath(payload, ["data", "to"])),
+    ...stringList(atPath(payload, ["receivedEmail", "to"])),
     ...stringList(payload.to),
     ...stringList(payload.To),
     ...stringList(payload.recipient),
@@ -221,6 +272,7 @@ function classifyEmail(
 function normalizeAlert(payload: Record<string, unknown>): NormalizedAlert {
   const htmlBody = firstText(
     atPath(payload, ["data", "html"]),
+    atPath(payload, ["receivedEmail", "html"]),
     payload.html,
     payload.HtmlBody,
     payload["body-html"],
@@ -228,6 +280,7 @@ function normalizeAlert(payload: Record<string, unknown>): NormalizedAlert {
   const bodyText =
     firstText(
       atPath(payload, ["data", "text"]),
+      atPath(payload, ["receivedEmail", "text"]),
       payload.text,
       payload.TextBody,
       payload.StrippedTextReply,
@@ -238,6 +291,7 @@ function normalizeAlert(payload: Record<string, unknown>): NormalizedAlert {
   const recipients = recipientEmails(payload);
   const subject = firstText(
     atPath(payload, ["data", "subject"]),
+    atPath(payload, ["receivedEmail", "subject"]),
     payload.subject,
     payload.Subject,
     "Untitled alert",
@@ -264,6 +318,7 @@ function normalizeAlert(payload: Record<string, unknown>): NormalizedAlert {
       extractEmailAddress(
         firstText(
           atPath(payload, ["data", "from"]),
+          atPath(payload, ["receivedEmail", "from"]),
           atPath(payload, ["FromFull", "Email"]),
           payload.from,
           payload.From,
@@ -410,6 +465,29 @@ function verifySvixSignature(request: Request, payload: string) {
     });
 }
 
+function logParseDiagnostic(
+  payload: Record<string, unknown>,
+  alert: NormalizedAlert,
+) {
+  const data = isRecord(payload.data) ? payload.data : {};
+  const receivedEmail = isRecord(payload.receivedEmail)
+    ? payload.receivedEmail
+    : {};
+
+  console.info("inbound_email_parsed", {
+    type: text(payload.type),
+    rootKeys: Object.keys(payload).slice(0, 12),
+    dataKeys: Object.keys(data).slice(0, 12),
+    receivedEmailKeys: Object.keys(receivedEmail).slice(0, 12),
+    hasSubject: alert.subject !== "Untitled alert",
+    hasBody: alert.bodyText.length > 0,
+    hasSender: Boolean(alert.senderEmail),
+    recipientEmail: alert.recipientEmail,
+    source: alert.source,
+    createdFrom: alert.createdFrom,
+  });
+}
+
 export async function POST(request: Request) {
   let payload: Record<string, unknown>;
 
@@ -436,6 +514,7 @@ export async function POST(request: Request) {
 
   const rawPayload = await enrichPayload(payload);
   const alert = normalizeAlert(rawPayload);
+  logParseDiagnostic(rawPayload, alert);
   const alertFingerprint = fingerprint(alert);
   const score = scoreAlert(alert);
 

@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { getSql, hasDatabaseUrl } from "@/lib/db";
 import { createTicket } from "@/lib/operations";
@@ -10,10 +10,12 @@ type NormalizedAlert = {
   source: string;
   externalId: string | null;
   senderEmail: string | null;
+  recipientEmail: string | null;
   subject: string;
   bodyText: string;
   service: string;
   severity: string;
+  createdFrom: "alert_email" | "client_email";
 };
 
 type IdRow = { id: string };
@@ -25,6 +27,92 @@ function text(value: unknown, fallback = "") {
     : fallback;
 }
 
+function base64UrlToBase64(value: string) {
+  return value.replace(/-/g, "+").replace(/_/g, "/");
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function atPath(payload: Record<string, unknown>, path: string[]) {
+  let current: unknown = payload;
+
+  for (const key of path) {
+    if (!isRecord(current)) return undefined;
+    current = current[key];
+  }
+
+  return current;
+}
+
+function firstText(...values: unknown[]) {
+  for (const value of values) {
+    const cleaned = text(value);
+    if (cleaned) return cleaned;
+  }
+
+  return "";
+}
+
+function stripHtml(value: string) {
+  return value
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function extractEmailAddress(value: unknown) {
+  const raw = text(value);
+  if (!raw) return "";
+
+  const bracketMatch = raw.match(/<([^>]+)>/);
+  const email = bracketMatch?.[1] ?? raw.match(/[^\s@<>]+@[^\s@<>]+/)?.[0];
+  return email?.trim().toLowerCase() ?? raw.toLowerCase();
+}
+
+function stringList(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value
+      .flatMap((entry) => {
+        if (isRecord(entry)) {
+          return [
+            entry.email,
+            entry.Email,
+            entry.address,
+            entry.Address,
+            entry.Name && entry.Email
+              ? `${entry.Name} <${entry.Email}>`
+              : undefined,
+          ];
+        }
+
+        return entry;
+      })
+      .map(extractEmailAddress)
+      .filter(Boolean);
+  }
+
+  const single = extractEmailAddress(value);
+  return single ? [single] : [];
+}
+
+function formValue(value: FormDataEntryValue) {
+  if (typeof value === "string") return value;
+
+  return {
+    filename: value.name,
+    contentType: value.type,
+    size: value.size,
+  };
+}
+
 async function readPayload(request: Request) {
   const contentType = request.headers.get("content-type") ?? "";
 
@@ -33,18 +121,167 @@ async function readPayload(request: Request) {
   }
 
   const formData = await request.formData();
-  return Object.fromEntries(formData.entries());
+  const payload: Record<string, unknown> = {};
+
+  for (const [key, value] of formData.entries()) {
+    const nextValue = formValue(value);
+    const existing = payload[key];
+
+    if (existing === undefined) {
+      payload[key] = nextValue;
+    } else if (Array.isArray(existing)) {
+      existing.push(nextValue);
+    } else {
+      payload[key] = [existing, nextValue];
+    }
+  }
+
+  return payload;
+}
+
+async function enrichPayload(payload: Record<string, unknown>) {
+  const eventType = text(payload.type);
+  const emailId = text(atPath(payload, ["data", "email_id"]));
+  const apiKey = process.env.RESEND_API_KEY?.trim();
+
+  if (eventType !== "email.received" || !emailId || !apiKey) {
+    return payload;
+  }
+
+  const response = await fetch(
+    `https://api.resend.com/emails/receiving/${encodeURIComponent(emailId)}`,
+    {
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        Accept: "application/json",
+      },
+    },
+  );
+
+  if (!response.ok) {
+    return payload;
+  }
+
+  const responseBody = (await response.json()) as Record<string, unknown>;
+  const receivedEmail = isRecord(responseBody.data)
+    ? responseBody.data
+    : responseBody;
+  const data = isRecord(payload.data) ? payload.data : {};
+
+  return {
+    ...payload,
+    data: {
+      ...data,
+      text: firstText(data.text, receivedEmail.text, receivedEmail.text_body),
+      html: firstText(data.html, receivedEmail.html, receivedEmail.html_body),
+      headers: receivedEmail.headers,
+    },
+    receivedEmail,
+  };
+}
+
+function recipientEmails(payload: Record<string, unknown>) {
+  return [
+    ...stringList(atPath(payload, ["data", "to"])),
+    ...stringList(payload.to),
+    ...stringList(payload.To),
+    ...stringList(payload.recipient),
+    ...stringList(payload.recipients),
+    ...stringList(payload.envelope),
+  ];
+}
+
+function classifyEmail(
+  payload: Record<string, unknown>,
+  subject: string,
+  bodyText: string,
+) {
+  const recipients = recipientEmails(payload);
+  const haystack = `${recipients.join(" ")} ${subject} ${bodyText}`.toLowerCase();
+
+  if (
+    /\b(alert|alerts|incident|incidents|monitor|monitoring|pager|ops|noc|sre)\b/.test(
+      haystack,
+    )
+  ) {
+    return "alert_email" as const;
+  }
+
+  if (
+    /\b(client|customer|support|help|ticket|request|inquiry|billing)\b/.test(
+      haystack,
+    )
+  ) {
+    return "client_email" as const;
+  }
+
+  return "client_email" as const;
 }
 
 function normalizeAlert(payload: Record<string, unknown>): NormalizedAlert {
+  const htmlBody = firstText(
+    atPath(payload, ["data", "html"]),
+    payload.html,
+    payload.HtmlBody,
+    payload["body-html"],
+  );
+  const bodyText =
+    firstText(
+      atPath(payload, ["data", "text"]),
+      payload.text,
+      payload.TextBody,
+      payload.StrippedTextReply,
+      payload.bodyText,
+      payload.body,
+      payload["body-plain"],
+    ) || stripHtml(htmlBody);
+  const recipients = recipientEmails(payload);
+  const subject = firstText(
+    atPath(payload, ["data", "subject"]),
+    payload.subject,
+    payload.Subject,
+    "Untitled alert",
+  );
+  const createdFrom = classifyEmail(payload, subject, bodyText);
+
   return {
-    source: text(payload.source, "email"),
-    externalId: text(payload.messageId ?? payload.id, "") || null,
-    senderEmail: text(payload.from ?? payload.senderEmail, "") || null,
-    subject: text(payload.subject, "Untitled alert"),
-    bodyText: text(payload.text ?? payload.bodyText ?? payload.body, ""),
-    service: text(payload.service ?? payload.host, "unknown-service"),
-    severity: text(payload.severity ?? payload.priority, "unknown"),
+    source: firstText(
+      payload.source,
+      payload.provider,
+      text(payload.type) === "email.received" ? "resend" : "",
+      "email",
+    ),
+    externalId:
+      firstText(
+        atPath(payload, ["data", "email_id"]),
+        atPath(payload, ["data", "message_id"]),
+        payload.messageId,
+        payload.MessageID,
+        payload["Message-Id"],
+        payload.id,
+      ) || null,
+    senderEmail:
+      extractEmailAddress(
+        firstText(
+          atPath(payload, ["data", "from"]),
+          atPath(payload, ["FromFull", "Email"]),
+          payload.from,
+          payload.From,
+          payload.sender,
+          payload.senderEmail,
+        ),
+      ) || null,
+    recipientEmail: recipients[0] ?? null,
+    subject,
+    bodyText,
+    service: firstText(
+      payload.service,
+      payload.host,
+      recipients[0]?.split("@")[0],
+      "unknown-service",
+    ),
+    severity: firstText(payload.severity, payload.priority, "unknown"),
+    createdFrom,
   };
 }
 
@@ -65,8 +302,8 @@ function fingerprint(alert: NormalizedAlert) {
 function scoreAlert(alert: NormalizedAlert) {
   const textToScore =
     `${alert.subject} ${alert.bodyText} ${alert.severity}`.toLowerCase();
-  let importanceScore = 10;
-  let urgencyScore = 10;
+  let importanceScore = alert.createdFrom === "client_email" ? 20 : 10;
+  let urgencyScore = alert.createdFrom === "client_email" ? 15 : 10;
 
   if (textToScore.includes("customer") || textToScore.includes("checkout")) {
     importanceScore += 20;
@@ -122,15 +359,82 @@ function isAuthorized(request: Request) {
   return bearer === expected || headerSecret === expected;
 }
 
-export async function POST(request: Request) {
-  if (!isAuthorized(request)) {
-    return NextResponse.json(
-      { ok: false, error: "Invalid webhook secret" },
-      { status: 401 },
-    );
+function hasSvixHeaders(request: Request) {
+  return Boolean(
+    request.headers.get("svix-id") &&
+      request.headers.get("svix-timestamp") &&
+      request.headers.get("svix-signature"),
+  );
+}
+
+function verifySvixSignature(request: Request, payload: string) {
+  const secret = process.env.RESEND_WEBHOOK_SECRET?.trim();
+  const id = request.headers.get("svix-id");
+  const timestamp = request.headers.get("svix-timestamp");
+  const signatureHeader = request.headers.get("svix-signature");
+
+  if (!secret || !id || !timestamp || !signatureHeader) {
+    return false;
   }
 
-  const rawPayload = await readPayload(request);
+  const timestampNumber = Number(timestamp);
+  const fiveMinutes = 5 * 60;
+  if (
+    !Number.isFinite(timestampNumber) ||
+    Math.abs(Date.now() / 1000 - timestampNumber) > fiveMinutes
+  ) {
+    return false;
+  }
+
+  const secretKey = secret.startsWith("whsec_")
+    ? Buffer.from(base64UrlToBase64(secret.slice("whsec_".length)), "base64")
+    : Buffer.from(secret);
+  const signedContent = `${id}.${timestamp}.${payload}`;
+  const expected = createHmac("sha256", secretKey)
+    .update(signedContent)
+    .digest();
+
+  return signatureHeader
+    .split(/\s+/)
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .some((entry) => {
+      const [version, signature] = entry.split(",");
+      if (version !== "v1" || !signature) return false;
+
+      const received = Buffer.from(base64UrlToBase64(signature), "base64");
+      return (
+        received.length === expected.length &&
+        timingSafeEqual(received, expected)
+      );
+    });
+}
+
+export async function POST(request: Request) {
+  let payload: Record<string, unknown>;
+
+  if (hasSvixHeaders(request)) {
+    const rawBody = await request.text();
+    if (!verifySvixSignature(request, rawBody)) {
+      return NextResponse.json(
+        { ok: false, error: "Invalid webhook signature" },
+        { status: 401 },
+      );
+    }
+
+    payload = JSON.parse(rawBody) as Record<string, unknown>;
+  } else {
+    if (!isAuthorized(request)) {
+      return NextResponse.json(
+        { ok: false, error: "Invalid webhook secret" },
+        { status: 401 },
+      );
+    }
+
+    payload = await readPayload(request);
+  }
+
+  const rawPayload = await enrichPayload(payload);
   const alert = normalizeAlert(rawPayload);
   const alertFingerprint = fingerprint(alert);
   const score = scoreAlert(alert);
@@ -153,6 +457,8 @@ export async function POST(request: Request) {
         ticketId: ticket.id,
         ticketNumber: ticket.ticket_number,
         priority: score.priority,
+        createdFrom: alert.createdFrom,
+        recipientEmail: alert.recipientEmail,
         fingerprint: alertFingerprint,
       },
       { status: 202 },
@@ -285,6 +591,23 @@ export async function POST(request: Request) {
         importance_score = greatest(importance_score, ${score.importanceScore})
       where id = ${ticketId}
     `;
+
+    if (alert.createdFrom === "client_email" && alert.bodyText) {
+      await sql`
+        insert into ticket_comments (
+          ticket_id,
+          author_email,
+          body,
+          created_via
+        )
+        values (
+          ${ticketId},
+          ${alert.senderEmail},
+          ${alert.bodyText},
+          'email'
+        )
+      `;
+    }
   } else {
     const ticketRows = (await sql`
       insert into tickets (
@@ -297,7 +620,8 @@ export async function POST(request: Request) {
         importance_score,
         urgency_score,
         sla_due_at,
-        reporter_email
+        reporter_email,
+        created_from
       )
       values (
         ${orgId},
@@ -309,7 +633,8 @@ export async function POST(request: Request) {
         ${score.importanceScore},
         ${score.urgencyScore},
         now() + (${slaMinutes(score.priority)} || ' minutes')::interval,
-        ${alert.senderEmail}
+        ${alert.senderEmail},
+        ${alert.createdFrom}
       )
       returning id, ticket_number::text
     `) as TicketIdRow[];
@@ -325,6 +650,8 @@ export async function POST(request: Request) {
       ticketId,
       ticketNumber,
       priority: score.priority,
+      createdFrom: alert.createdFrom,
+      recipientEmail: alert.recipientEmail,
       fingerprint: alertFingerprint,
     },
     { status: 202 },

@@ -3,12 +3,14 @@
 import {
   Activity,
   AlertTriangle,
+  ArrowLeft,
   Bell,
   CheckCircle2,
   CircleDot,
   Clock3,
   Gauge,
   Inbox,
+  LayoutDashboard,
   MessageSquarePlus,
   Plus,
   RadioTower,
@@ -23,16 +25,12 @@ import {
   X,
   XCircle,
 } from "lucide-react";
-import {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  useTransition,
-} from "react";
+import Link from "next/link";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import type { FormEvent, ReactNode, RefObject } from "react";
 import type {
   DashboardData,
+  IncidentSnapshot,
   OpsMetric,
   Priority,
   TicketQueueItem,
@@ -241,33 +239,157 @@ function TextField({
   );
 }
 
+function AppHeader({
+  title,
+  subtitle = "Alert Triage",
+  active,
+  actions,
+}: {
+  title: string;
+  subtitle?: string;
+  active: "queue" | "overview" | "settings";
+  actions?: ReactNode;
+}) {
+  const links = [
+    { href: "/", label: "Queue", key: "queue" as const, icon: Inbox },
+    {
+      href: "/overview",
+      label: "Overview",
+      key: "overview" as const,
+      icon: LayoutDashboard,
+    },
+    {
+      href: "/settings",
+      label: "Settings",
+      key: "settings" as const,
+      icon: Settings,
+    },
+  ];
+
+  return (
+    <header className="glass-header sticky top-0 z-20 border-b border-stone-200/70">
+      <div className="mx-auto flex max-w-[1240px] flex-col gap-4 px-4 py-4 sm:px-6 xl:flex-row xl:items-center xl:justify-between">
+        <div className="flex min-w-0 items-center gap-4">
+          <Link
+            href="/"
+            className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-stone-900 to-stone-700 text-white shadow-md ring-1 ring-black/10"
+            aria-label="Open queue"
+          >
+            <Bell className="h-5 w-5" />
+          </Link>
+          <div className="min-w-0">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-stone-500">
+              {subtitle}
+            </p>
+            <h1 className="truncate text-[22px] font-semibold tracking-tight text-stone-950 sm:text-[26px]">
+              {title}
+            </h1>
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <nav className="flex rounded-full border border-stone-200 bg-white/70 p-1 shadow-sm backdrop-blur">
+            {links.map((link) => {
+              const Icon = link.icon;
+              const isActiveLink = active === link.key;
+              return (
+                <Link
+                  key={link.href}
+                  href={link.href}
+                  className={`inline-flex h-9 items-center justify-center gap-2 rounded-full px-3 text-[12.5px] font-semibold transition ${
+                    isActiveLink
+                      ? "bg-stone-900 text-white shadow-sm"
+                      : "text-stone-600 hover:bg-white hover:text-stone-950"
+                  }`}
+                >
+                  <Icon className="h-4 w-4" />
+                  {link.label}
+                </Link>
+              );
+            })}
+          </nav>
+          {actions}
+        </div>
+      </div>
+    </header>
+  );
+}
+
+function Notice({ message }: { message: string | null }) {
+  if (!message) return null;
+
+  return (
+    <div className="fixed bottom-5 left-1/2 z-50 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 rounded-2xl border border-stone-200 bg-white/95 px-4 py-3 text-sm font-semibold text-stone-800 shadow-[0_24px_48px_-24px_rgba(20,14,5,0.45)] backdrop-blur">
+      <div className="flex items-center gap-2">
+        <span className="h-2 w-2 rounded-full bg-emerald-500 ring-pulse" />
+        {message}
+      </div>
+    </div>
+  );
+}
+
+function HealthButton({
+  isLive,
+  isPending,
+  onClick,
+}: {
+  isLive: boolean;
+  isPending: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={isPending}
+      className={`inline-flex h-10 items-center justify-center gap-2 rounded-full border px-3.5 text-[12.5px] font-semibold disabled:opacity-60 ${
+        isLive
+          ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+          : "border-amber-200 bg-amber-50 text-amber-800"
+      }`}
+    >
+      <span
+        className={`h-2 w-2 rounded-full ${
+          isLive ? "bg-emerald-500 ring-pulse" : "bg-amber-500 pulse-soft"
+        }`}
+      />
+      <ShieldCheck className="h-4 w-4" />
+      {isLive ? "Neon live" : "Demo data"}
+    </button>
+  );
+}
+
 function MetricCard({
   metric,
   onActivate,
   active,
 }: {
   metric: OpsMetric;
-  onActivate: () => void;
-  active: boolean;
+  onActivate?: () => void;
+  active?: boolean;
 }) {
   const Icon = metricIcons[metric.key];
   const accent = metricAccent[metric.key];
+  const Tag = onActivate ? "button" : "div";
 
   return (
-    <button
-      type="button"
+    <Tag
+      type={onActivate ? "button" : undefined}
       onClick={onActivate}
-      aria-pressed={active}
-      className={`surface-card group relative overflow-hidden p-5 text-left transition duration-300 hover:-translate-y-0.5 hover:shadow-[0_18px_40px_-22px_rgba(20,14,5,0.35)] ring-1 ${accent.ring} ${
-        active ? "outline outline-2 outline-offset-2 outline-stone-950" : ""
-      }`}
+      aria-pressed={onActivate ? active : undefined}
+      className={`surface-card group relative overflow-hidden p-5 text-left transition duration-300 ring-1 ${accent.ring} ${
+        onActivate
+          ? "hover:-translate-y-0.5 hover:shadow-[0_18px_40px_-22px_rgba(20,14,5,0.35)]"
+          : ""
+      } ${active ? "outline outline-2 outline-offset-2 outline-stone-950" : ""}`}
     >
       <div
         className={`pointer-events-none absolute -right-12 -top-12 h-40 w-40 rounded-full bg-gradient-to-br ${accent.glow} opacity-70 blur-2xl transition duration-500 group-hover:opacity-90`}
       />
       <div className="relative flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className={`text-[11px] font-semibold uppercase tracking-[0.1em] ${accent.label}`}>
+          <p
+            className={`text-[11px] font-semibold uppercase tracking-[0.1em] ${accent.label}`}
+          >
             {metric.label}
           </p>
           <p className="mt-3 text-4xl font-semibold tracking-tight text-stone-950 tabular-nums">
@@ -283,41 +405,27 @@ function MetricCard({
       <p className="relative mt-4 border-t border-stone-200/70 pt-3 text-sm leading-5 text-stone-500">
         {metric.detail}
       </p>
-    </button>
+    </Tag>
   );
 }
 
 function TicketListItem({
   ticket,
-  selected,
   nowMs,
-  onSelect,
 }: {
   ticket: TicketQueueItem;
-  selected: boolean;
   nowMs: number;
-  onSelect: () => void;
 }) {
   const isBreached = isBreachedTicket(ticket, nowMs);
 
   return (
-    <button
-      type="button"
-      onClick={onSelect}
-      className={`relative w-full border-b border-stone-200/70 px-5 py-4 text-left transition-colors duration-200 last:border-b-0 ${
-        selected
-          ? "bg-gradient-to-r from-stone-50 to-white"
-          : "bg-white hover:bg-stone-50/60"
-      }`}
+    <Link
+      href={`/tickets/${ticket.id}`}
+      className="relative block w-full border-b border-stone-200/70 bg-white px-5 py-4 text-left transition-colors duration-200 last:border-b-0 hover:bg-stone-50/60"
     >
       <span
-        className={`absolute left-0 top-3 bottom-3 w-[3px] rounded-r-full ${priorityRail[ticket.priority]} ${
-          selected ? "" : "opacity-80"
-        }`}
+        className={`absolute bottom-3 left-0 top-3 w-[3px] rounded-r-full ${priorityRail[ticket.priority]} opacity-80`}
       />
-      {selected ? (
-        <span className="pointer-events-none absolute inset-y-0 right-0 w-[3px] rounded-l bg-stone-900" />
-      ) : null}
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="mb-2 flex flex-wrap items-center gap-1.5">
@@ -342,18 +450,29 @@ function TicketListItem({
           <h2 className="line-clamp-2 text-[13.5px] font-semibold leading-5 text-stone-900">
             {ticket.title}
           </h2>
+          <p className="mt-2 line-clamp-2 text-[12.5px] leading-5 text-stone-500">
+            {ticket.description || "No description yet."}
+          </p>
         </div>
         <span className="shrink-0 rounded-md bg-stone-900 px-2 py-1 font-mono text-[10px] font-semibold tracking-wide text-stone-50">
           TK-{ticket.ticketNumber}
         </span>
       </div>
-      <div className="mt-3 grid grid-cols-2 gap-3 text-[11px]">
+      <div className="mt-3 grid grid-cols-2 gap-3 text-[11px] sm:grid-cols-4">
         <div className="min-w-0">
           <p className="font-semibold uppercase tracking-[0.08em] text-stone-400">
             Owner
           </p>
           <p className="mt-1 truncate font-medium text-stone-700">
             {ticket.assignee}
+          </p>
+        </div>
+        <div className="min-w-0">
+          <p className="font-semibold uppercase tracking-[0.08em] text-stone-400">
+            Team
+          </p>
+          <p className="mt-1 truncate font-medium text-stone-700">
+            {ticket.team}
           </p>
         </div>
         <div className="min-w-0">
@@ -368,14 +487,16 @@ function TicketListItem({
             {ticket.slaDueAt ? formatDateTime(ticket.slaDueAt) : "Not set"}
           </p>
         </div>
+        <div className="min-w-0">
+          <p className="font-semibold uppercase tracking-[0.08em] text-stone-400">
+            Score
+          </p>
+          <p className="mt-1 truncate font-mono font-semibold tabular-nums text-stone-700">
+            {ticket.importanceScore} x {ticket.urgencyScore}
+          </p>
+        </div>
       </div>
-      <div className="mt-3 flex items-center justify-between gap-3 text-[11px] text-stone-500">
-        <span className="truncate">{ticket.team}</span>
-        <span className="shrink-0 font-mono tabular-nums text-stone-400">
-          {ticket.importanceScore} × {ticket.urgencyScore}
-        </span>
-      </div>
-    </button>
+    </Link>
   );
 }
 
@@ -415,7 +536,6 @@ function NewTicketModal({
 
   useEffect(() => {
     if (!isOpen) return;
-    setDraft(emptyDraft);
     const focusTimeout = window.setTimeout(() => titleRef.current?.focus(), 50);
     return () => window.clearTimeout(focusTimeout);
   }, [isOpen]);
@@ -423,7 +543,10 @@ function NewTicketModal({
   useEffect(() => {
     if (!isOpen) return;
     const handler = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
+      if (event.key === "Escape") {
+        setDraft(emptyDraft);
+        onClose();
+      }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
@@ -433,9 +556,15 @@ function NewTicketModal({
 
   const draftTeamUsers = usersForTeam(data.users, draft.assignedTeamId || null);
 
+  function resetAndClose() {
+    setDraft(emptyDraft);
+    onClose();
+  }
+
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     onSubmit(draft);
+    setDraft(emptyDraft);
   }
 
   return (
@@ -444,7 +573,7 @@ function NewTicketModal({
       aria-modal="true"
       aria-labelledby="new-ticket-title"
       className="fixed inset-0 z-50 flex items-center justify-center bg-stone-950/40 p-4 backdrop-blur-sm"
-      onClick={onClose}
+      onClick={resetAndClose}
     >
       <div
         className="surface-card max-h-[calc(100vh-2rem)] w-full max-w-md overflow-y-auto p-6"
@@ -462,7 +591,7 @@ function NewTicketModal({
           </div>
           <button
             type="button"
-            onClick={onClose}
+            onClick={resetAndClose}
             aria-label="Close"
             className="flex h-8 w-8 items-center justify-center rounded-lg text-stone-500 transition hover:bg-stone-100 hover:text-stone-900"
           >
@@ -550,7 +679,7 @@ function NewTicketModal({
           <div className="grid grid-cols-2 gap-3 pt-2">
             <button
               type="button"
-              onClick={onClose}
+              onClick={resetAndClose}
               className="btn-soft inline-flex h-11 items-center justify-center gap-2 rounded-xl px-3 text-sm font-semibold"
             >
               Cancel
@@ -570,33 +699,143 @@ function NewTicketModal({
   );
 }
 
-export function TriageConsole({ initialData }: { initialData: DashboardData }) {
+function useDashboardState(initialData: DashboardData) {
   const [data, setData] = useState(initialData);
-  const [selectedId, setSelectedId] = useState(initialData.tickets[0]?.id ?? "");
+  const [notice, setNotice] = useState<string | null>(null);
+  const [isPending, startTransition] = useTransition();
+
+  async function refresh() {
+    const response = await fetch("/api/dashboard", { cache: "no-store" });
+    if (!response.ok) throw new Error("Unable to refresh dashboard");
+    const nextData = (await response.json()) as DashboardData;
+    setData(nextData);
+    return nextData;
+  }
+
+  function runMutation(action: () => Promise<string | void>) {
+    setNotice(null);
+    startTransition(async () => {
+      try {
+        const message = await action();
+        if (message) setNotice(message);
+      } catch (error) {
+        setNotice(error instanceof Error ? error.message : "Something went wrong");
+      }
+    });
+  }
+
+  async function checkHealth() {
+    const response = await fetch("/api/health", { cache: "no-store" });
+    const result = (await response.json()) as {
+      ok?: boolean;
+      database?: string;
+      error?: string;
+    };
+
+    if (!response.ok || !result.ok) {
+      throw new Error(result.error ?? "Health check failed");
+    }
+
+    return `Health ok: database ${result.database ?? "unknown"}`;
+  }
+
+  async function createTicket(draft: DraftTicket) {
+    const response = await fetch("/api/tickets", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: draft.title,
+        description: draft.description,
+        reporterEmail: draft.reporterEmail,
+        priority: draft.priority,
+        assignedTeamId: draft.assignedTeamId || null,
+        assignedUserId: draft.assignedUserId || null,
+      }),
+    });
+    const result = (await response.json()) as {
+      ok?: boolean;
+      error?: string;
+      ticket?: { id: string; ticket_number?: string };
+    };
+
+    if (!response.ok || !result.ok || !result.ticket) {
+      throw new Error(result.error ?? "Unable to create ticket");
+    }
+
+    await refresh();
+    window.location.href = `/tickets/${result.ticket.id}`;
+    return result.ticket.ticket_number
+      ? `Created TK-${result.ticket.ticket_number}`
+      : "Ticket created";
+  }
+
+  async function patchTicket(ticketId: string, payload: Record<string, unknown>) {
+    const response = await fetch(`/api/tickets/${ticketId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const result = (await response.json()) as { ok?: boolean; error?: string };
+
+    if (!response.ok || !result.ok) {
+      throw new Error(result.error ?? "Unable to update ticket");
+    }
+
+    await refresh();
+  }
+
+  async function addComment(ticketId: string, body: string) {
+    const response = await fetch(`/api/tickets/${ticketId}/comments`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ body, authorEmail: "operator@example.com" }),
+    });
+    const result = (await response.json()) as { ok?: boolean; error?: string };
+
+    if (!response.ok || !result.ok) {
+      throw new Error(result.error ?? "Unable to add comment");
+    }
+
+    await refresh();
+  }
+
+  return {
+    data,
+    notice,
+    isPending,
+    runMutation,
+    refresh,
+    checkHealth,
+    createTicket,
+    patchTicket,
+    addComment,
+  };
+}
+
+export function TriageConsole({ initialData }: { initialData: DashboardData }) {
+  const {
+    data,
+    notice,
+    isPending,
+    runMutation,
+    refresh,
+    checkHealth,
+    createTicket,
+  } = useDashboardState(initialData);
   const [query, setQuery] = useState("");
   const [priorityFilter, setPriorityFilter] = useState<"all" | Priority>("all");
   const [statusFilter, setStatusFilter] = useState<FilterStatus>("active");
   const [teamFilter, setTeamFilter] = useState("all");
   const [showBreachedOnly, setShowBreachedOnly] = useState(false);
-  const [comment, setComment] = useState("");
-  const [notice, setNotice] = useState<string | null>(null);
   const [isNewTicketOpen, setIsNewTicketOpen] = useState(false);
-  const [isPending, startTransition] = useTransition();
-  const queueRef = useRef<HTMLElement | null>(null);
-  const detailRef = useRef<HTMLElement | null>(null);
-  const teamRef = useRef<HTMLDivElement | null>(null);
 
   const nowMs = new Date(data.refreshedAt).getTime();
-  const activeTickets = data.tickets.filter(isActive).length;
   const isLive = data.source === "database";
   const canMutate = isLive || (data.source === "demo" && !data.dbError);
+  const activeTickets = data.tickets.filter(isActive).length;
   const breachedTickets = data.tickets.filter((ticket) =>
     isBreachedTicket(ticket, nowMs),
   ).length;
-
-  function scrollToSection(ref: RefObject<HTMLElement | null>) {
-    ref.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-  }
 
   function resetFilters() {
     setQuery("");
@@ -631,27 +870,21 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
       setStatusFilter("active");
       setShowBreachedOnly(false);
     }
-
-    scrollToSection(queueRef);
   }
 
   const filteredTickets = useMemo(() => {
     return data.tickets.filter((ticket) => {
       if (statusFilter === "active" && !isActive(ticket)) return false;
-      if (
-        statusFilter !== "all" &&
-        statusFilter !== "active" &&
-        ticket.status !== statusFilter
-      ) {
-        return false;
+      if (statusFilter !== "active" && statusFilter !== "all") {
+        if (ticket.status !== statusFilter) return false;
       }
       if (priorityFilter !== "all" && ticket.priority !== priorityFilter) {
         return false;
       }
-      if (showBreachedOnly && !isBreachedTicket(ticket, nowMs)) return false;
       if (teamFilter !== "all" && ticket.assignedTeamId !== teamFilter) {
         return false;
       }
+      if (showBreachedOnly && !isBreachedTicket(ticket, nowMs)) return false;
       if (query && !ticketMatchesSearch(ticket, query)) return false;
       return true;
     });
@@ -665,811 +898,232 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
     teamFilter,
   ]);
 
-  const selectedTicket =
-    filteredTickets.find((ticket) => ticket.id === selectedId) ??
-    filteredTickets[0] ??
-    null;
-  const selectedIncident = selectedTicket?.incidentId
-    ? data.incidents.find((incident) => incident.id === selectedTicket.incidentId)
-    : null;
-
-  async function refresh(nextSelectedId = selectedTicket?.id ?? selectedId) {
-    const response = await fetch("/api/dashboard", { cache: "no-store" });
-    if (!response.ok) throw new Error("Unable to refresh dashboard");
-    const nextData = (await response.json()) as DashboardData;
-    setData(nextData);
-    if (nextData.tickets.some((ticket) => ticket.id === nextSelectedId)) {
-      setSelectedId(nextSelectedId);
-    } else {
-      setSelectedId(nextData.tickets[0]?.id ?? "");
-    }
-  }
-
-  function runMutation(action: () => Promise<string | void>) {
-    setNotice(null);
-    startTransition(async () => {
-      try {
-        const message = await action();
-        if (message) setNotice(message);
-      } catch (error) {
-        setNotice(error instanceof Error ? error.message : "Something went wrong");
-      }
-    });
-  }
-
-  async function checkHealth() {
-    const response = await fetch("/api/health", { cache: "no-store" });
-    const result = (await response.json()) as {
-      ok?: boolean;
-      database?: string;
-      error?: string;
-    };
-
-    if (!response.ok || !result.ok) {
-      throw new Error(result.error ?? "Health check failed");
-    }
-
-    return `Health ok: database ${result.database ?? "unknown"}`;
-  }
-
-  async function patchTicket(ticketId: string, payload: Record<string, unknown>) {
-    const response = await fetch(`/api/tickets/${ticketId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-
-    if (!response.ok) {
-      const result = (await response.json()) as { error?: string };
-      throw new Error(result.error ?? "Unable to update ticket");
-    }
-
-    await refresh(ticketId);
-  }
-
-  async function createTicket(draft: DraftTicket) {
-    const response = await fetch("/api/tickets", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        ...draft,
-        assignedTeamId: draft.assignedTeamId || null,
-        assignedUserId: draft.assignedUserId || null,
-      }),
-    });
-
-    const result = (await response.json()) as {
-      ticket?: { id: string };
-      error?: string;
-    };
-
-    if (!response.ok || !result.ticket) {
-      throw new Error(result.error ?? "Unable to create ticket");
-    }
-
-    await refresh(result.ticket.id);
-  }
-
   function submitNewTicket(draft: DraftTicket) {
     runMutation(async () => {
       await createTicket(draft);
-      setIsNewTicketOpen(false);
-      return "Ticket created";
     });
+    setIsNewTicketOpen(false);
   }
-
-  function submitComment(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!selectedTicket) return;
-
-    runMutation(async () => {
-      const response = await fetch(`/api/tickets/${selectedTicket.id}/comments`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ body: comment }),
-      });
-
-      if (!response.ok) {
-        const result = (await response.json()) as { error?: string };
-        throw new Error(result.error ?? "Unable to add comment");
-      }
-
-      setComment("");
-      await refresh(selectedTicket.id);
-      return "Comment added";
-    });
-  }
-
-  const selectedTeamUsers = usersForTeam(
-    data.users,
-    selectedTicket?.assignedTeamId ?? null,
-  );
 
   return (
     <main className="min-h-screen overflow-x-hidden text-stone-900">
-      <div className="grid min-h-screen lg:grid-cols-[80px_minmax(0,1fr)]">
-        <aside className="sidebar-ink hidden text-white lg:flex lg:flex-col lg:items-center lg:justify-between lg:py-6">
-          <div className="grid gap-3">
+      <AppHeader
+        title="Triage inbox"
+        active="queue"
+        actions={
+          <>
+            <HealthButton
+              isLive={isLive}
+              isPending={isPending}
+              onClick={() => runMutation(checkHealth)}
+            />
             <button
               type="button"
-              onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
-              className="relative flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-200 via-amber-100 to-stone-50 text-stone-900 shadow-lg ring-1 ring-black/10 transition hover:scale-105"
-              aria-label="Scroll to overview"
-              title="Overview"
+              onClick={() => setIsNewTicketOpen(true)}
+              disabled={!canMutate}
+              className="btn-soft inline-flex h-10 items-center justify-center gap-2 rounded-full px-4 text-[12.5px] font-semibold disabled:opacity-60"
             >
-              <Bell className="h-5 w-5" />
-              <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-emerald-400 ring-2 ring-[#181614] ring-pulse" />
+              <Plus className="h-4 w-4" />
+              New ticket
             </button>
-            <div className="mt-3 grid gap-2">
-              <button
-                type="button"
-                onClick={() => scrollToSection(queueRef)}
-                className="group relative flex h-11 w-11 items-center justify-center rounded-xl bg-white text-stone-900 shadow-md ring-1 ring-white/40 transition hover:bg-amber-100"
-                aria-label="Go to queue"
-                title="Queue"
-              >
-                <span className="absolute -left-3 top-1/2 h-6 w-1 -translate-y-1/2 rounded-r-full bg-amber-300" />
-                <Inbox className="h-5 w-5" />
-              </button>
-              <button
-                type="button"
-                onClick={() => scrollToSection(detailRef)}
-                className="group relative flex h-11 w-11 items-center justify-center rounded-xl text-stone-300 transition hover:bg-white/10 hover:text-white"
-                aria-label="Go to detail"
-                title="Detail"
-              >
-                <Activity className="h-5 w-5" />
-              </button>
-              <button
-                type="button"
-                onClick={() => setIsNewTicketOpen(true)}
-                className="group relative flex h-11 w-11 items-center justify-center rounded-xl text-stone-300 transition hover:bg-white/10 hover:text-white"
-                aria-label="New ticket"
-                title="New ticket"
-              >
-                <Plus className="h-5 w-5" />
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  if (teamRef.current) {
-                    teamRef.current.scrollIntoView({
-                      behavior: "smooth",
-                      block: "start",
-                    });
-                  }
-                }}
-                className="group relative flex h-11 w-11 items-center justify-center rounded-xl text-stone-300 transition hover:bg-white/10 hover:text-white"
-                aria-label="Go to team load"
-                title="Teams"
-              >
-                <Users className="h-5 w-5" />
-              </button>
-              <a
-                href="/settings"
-                className="group relative flex h-11 w-11 items-center justify-center rounded-xl text-stone-300 transition hover:bg-white/10 hover:text-white"
-                aria-label="Settings"
-                title="Settings"
-              >
-                <Settings className="h-5 w-5" />
-              </a>
-            </div>
-          </div>
-          <div className="grid gap-3">
-            <div className="flex h-2 w-2 items-center justify-center self-center rounded-full bg-emerald-400 ring-pulse" />
             <button
               type="button"
-              onClick={() => {
-                resetFilters();
-                scrollToSection(queueRef);
-              }}
-              className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-[11px] font-semibold tracking-wide text-stone-200 transition hover:border-amber-300 hover:text-amber-200"
-              aria-label="Reset filters"
-              title="Reset filters"
+              onClick={() =>
+                runMutation(() => refresh().then(() => "Refreshed"))
+              }
+              disabled={isPending}
+              className="btn-primary inline-flex h-10 items-center justify-center gap-2 rounded-full px-4 text-[12.5px] font-semibold disabled:opacity-60"
             >
-              K3
+              <RotateCcw
+                className={`h-4 w-4 ${isPending ? "animate-spin" : ""}`}
+              />
+              Refresh
             </button>
-          </div>
-        </aside>
+          </>
+        }
+      />
 
-        <div className="min-w-0">
-          <header className="glass-header sticky top-0 z-20 border-b border-stone-200/70">
-            <div className="mx-auto flex max-w-[1540px] flex-col gap-4 px-4 py-4 sm:px-6 xl:flex-row xl:items-center xl:justify-between xl:px-10">
-              <div className="flex min-w-0 items-center gap-4">
+      <section className="mx-auto max-w-[1240px] px-4 py-6 sm:px-6">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          {data.metrics.map((metric) => (
+            <MetricCard
+              key={metric.key}
+              metric={
+                metric.key === "slaBreaches"
+                  ? { ...metric, value: String(breachedTickets) }
+                  : metric
+              }
+              active={
+                (metric.key === "openTickets" &&
+                  statusFilter === "active" &&
+                  priorityFilter === "all" &&
+                  teamFilter === "all" &&
+                  !showBreachedOnly &&
+                  !query) ||
+                (metric.key === "p1Incidents" &&
+                  priorityFilter === "P1" &&
+                  !showBreachedOnly) ||
+                (metric.key === "slaBreaches" && showBreachedOnly)
+              }
+              onActivate={() => activateMetric(metric.key)}
+            />
+          ))}
+        </div>
+
+        {data.teamLoad.length > 0 ? (
+          <div className="fancy-scroll mt-4 flex gap-2 overflow-x-auto pb-1">
+            {data.teamLoad.map((team) => {
+              const teamOption = data.teams.find(
+                (item) => item.name === team.team,
+              );
+              const isActiveFilter = teamOption
+                ? teamFilter === teamOption.id
+                : false;
+              return (
                 <button
+                  key={team.team}
                   type="button"
-                  onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
-                  className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-stone-900 to-stone-700 text-white shadow-md ring-1 ring-black/10 lg:hidden"
-                  aria-label="Scroll to overview"
-                >
-                  <Bell className="h-5 w-5" />
-                </button>
-                <div className="min-w-0">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-stone-500">
-                    Alert Triage
-                  </p>
-                  <h1 className="truncate font-semibold tracking-tight text-stone-950 text-[22px] sm:text-[26px]">
-                    Operations command center
-                  </h1>
-                </div>
-              </div>
-              <div className="flex w-full flex-wrap items-center gap-2 xl:w-auto">
-                <button
-                  type="button"
-                  onClick={() => runMutation(checkHealth)}
-                  className={`inline-flex h-10 items-center justify-center gap-2 rounded-full border px-3.5 text-[12.5px] font-semibold ${
-                    isLive
-                      ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-                      : "border-amber-200 bg-amber-50 text-amber-800"
+                  disabled={!teamOption}
+                  onClick={() => {
+                    if (!teamOption) return;
+                    setTeamFilter(isActiveFilter ? "all" : teamOption.id);
+                    setStatusFilter("active");
+                    setPriorityFilter("all");
+                    setShowBreachedOnly(false);
+                  }}
+                  className={`shrink-0 rounded-xl border px-3 py-2 text-left transition disabled:opacity-60 ${
+                    isActiveFilter
+                      ? "border-stone-900 bg-stone-900 text-white"
+                      : "border-stone-200 bg-white text-stone-900 hover:border-stone-300"
                   }`}
                 >
-                  <span
-                    className={`h-2 w-2 rounded-full ${
-                      isLive ? "bg-emerald-500 ring-pulse" : "bg-amber-500 pulse-soft"
-                    }`}
-                  />
-                  <ShieldCheck className="h-4 w-4" />
-                  {isLive ? "Neon live" : "Demo data"}
-                </button>
-                <a
-                  href="/settings"
-                  className="inline-flex h-10 items-center justify-center gap-2 rounded-full border border-stone-200 bg-white/80 px-3.5 text-[12.5px] font-semibold text-stone-700 backdrop-blur transition hover:bg-white"
-                >
-                  <Settings className="h-4 w-4" />
-                  Settings
-                </a>
-                <button
-                  type="button"
-                  onClick={() => setIsNewTicketOpen(true)}
-                  disabled={!canMutate}
-                  className="btn-soft inline-flex h-10 items-center justify-center gap-2 rounded-full px-4 text-[12.5px] font-semibold disabled:opacity-60"
-                >
-                  <Plus className="h-4 w-4" />
-                  New ticket
-                </button>
-                <button
-                  type="button"
-                  onClick={() =>
-                    runMutation(() => refresh().then(() => "Refreshed"))
-                  }
-                  disabled={isPending}
-                  className="btn-primary inline-flex h-10 items-center justify-center gap-2 rounded-full px-4 text-[12.5px] font-semibold disabled:opacity-60"
-                >
-                  <RotateCcw className={`h-4 w-4 ${isPending ? "animate-spin" : ""}`} />
-                  Refresh
-                </button>
-              </div>
-            </div>
-          </header>
-
-          <section className="mx-auto max-w-[1540px] px-4 py-6 sm:px-6 xl:px-10">
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-              {data.metrics.map((metric) => (
-                <MetricCard
-                  key={metric.key}
-                  metric={
-                    metric.key === "slaBreaches"
-                      ? { ...metric, value: String(breachedTickets) }
-                      : metric
-                  }
-                  active={
-                    (metric.key === "openTickets" &&
-                      statusFilter === "active" &&
-                      priorityFilter === "all" &&
-                      teamFilter === "all" &&
-                      !showBreachedOnly &&
-                      !query) ||
-                    (metric.key === "p1Incidents" &&
-                      priorityFilter === "P1" &&
-                      !showBreachedOnly) ||
-                    (metric.key === "slaBreaches" && showBreachedOnly)
-                  }
-                  onActivate={() => activateMetric(metric.key)}
-                />
-              ))}
-            </div>
-
-            {data.teamLoad.length > 0 ? (
-              <div
-                ref={teamRef}
-                className="fancy-scroll mt-4 flex gap-2 overflow-x-auto pb-1"
-              >
-                {data.teamLoad.map((team) => {
-                  const teamOption = data.teams.find(
-                    (item) => item.name === team.team,
-                  );
-                  const isActiveFilter = teamOption
-                    ? teamFilter === teamOption.id
-                    : false;
-                  return (
-                    <button
-                      key={team.team}
-                      type="button"
-                      disabled={!teamOption}
-                      onClick={() => {
-                        if (!teamOption) return;
-                        setTeamFilter(isActiveFilter ? "all" : teamOption.id);
-                        setStatusFilter("active");
-                        setPriorityFilter("all");
-                        setShowBreachedOnly(false);
-                        scrollToSection(queueRef);
-                      }}
-                      className={`shrink-0 rounded-xl border px-3 py-2 text-left transition disabled:opacity-60 ${
-                        isActiveFilter
-                          ? "border-stone-900 bg-stone-900 text-white"
-                          : "border-stone-200 bg-white text-stone-900 hover:border-stone-300"
-                      }`}
-                    >
-                      <div className="flex items-center gap-2 text-[12.5px] font-semibold tracking-tight">
-                        <Users className="h-3.5 w-3.5 opacity-70" />
-                        {team.team}
-                      </div>
-                      <div className="mt-1 flex items-center gap-2 text-[11px]">
-                        <span className="tabular-nums opacity-80">
-                          {team.openTickets} open
-                        </span>
-                        {team.urgentTickets > 0 ? (
-                          <span
-                            className={`rounded px-1.5 py-0.5 font-semibold tabular-nums ${
-                              isActiveFilter
-                                ? "bg-red-300/20 text-red-100"
-                                : "bg-red-50 text-red-700"
-                            }`}
-                          >
-                            {team.urgentTickets} urgent
-                          </span>
-                        ) : null}
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            ) : null}
-
-            <div className="mt-6 grid gap-5 xl:grid-cols-[400px_minmax(0,1fr)]">
-              <section
-                id="triage-queue"
-                ref={queueRef}
-                className="surface-card scroll-mt-24 overflow-hidden"
-              >
-                <div className="border-b border-stone-200/70 bg-gradient-to-b from-stone-50 to-white p-5">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="flex min-w-0 items-center gap-3">
-                      <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-stone-900 to-stone-700 text-white shadow-md ring-1 ring-black/10">
-                        <Inbox className="h-5 w-5" />
-                      </div>
-                      <div className="min-w-0">
-                        <h2 className="text-[15px] font-semibold tracking-tight text-stone-950">
-                          Triage queue
-                        </h2>
-                        <p className="text-[12.5px] text-stone-500">
-                          <span className="font-semibold text-stone-700 tabular-nums">
-                            {activeTickets}
-                          </span>{" "}
-                          active ·{" "}
-                          <span className="tabular-nums">{data.tickets.length}</span> total
-                        </p>
-                      </div>
-                    </div>
-                    <span className="rounded-full border border-stone-200 bg-white px-2.5 py-1 text-[11px] font-semibold tabular-nums text-stone-600 shadow-sm">
-                      {filteredTickets.length} shown
+                  <div className="flex items-center gap-2 text-[12.5px] font-semibold tracking-tight">
+                    <Users className="h-3.5 w-3.5 opacity-70" />
+                    {team.team}
+                  </div>
+                  <div className="mt-1 flex items-center gap-2 text-[11px]">
+                    <span className="tabular-nums opacity-80">
+                      {team.openTickets} open
                     </span>
-                  </div>
-                  <div className="relative mt-4">
-                    <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-stone-400" />
-                    <input
-                      value={query}
-                      onChange={(event) => setQuery(event.target.value)}
-                      placeholder="Search by title, owner, team…"
-                      className="input-field h-10 w-full min-w-0 pl-9 pr-3 text-sm text-stone-900 placeholder:text-stone-400"
-                    />
-                  </div>
-                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                    <SelectField
-                      labelText="Status"
-                      value={statusFilter}
-                      onChange={(value) => setStatusFilter(value as FilterStatus)}
-                    >
-                      <option value="active">Active</option>
-                      <option value="all">All</option>
-                      {statuses.map((status) => (
-                        <option key={status} value={status}>
-                          {label(status)}
-                        </option>
-                      ))}
-                    </SelectField>
-                    <SelectField
-                      labelText="Priority"
-                      value={priorityFilter}
-                      onChange={(value) =>
-                        setPriorityFilter(value as "all" | Priority)
-                      }
-                    >
-                      <option value="all">All</option>
-                      {priorities.map((priority) => (
-                        <option key={priority} value={priority}>
-                          {priority}
-                        </option>
-                      ))}
-                    </SelectField>
-                    <SelectField
-                      labelText="Team"
-                      value={teamFilter}
-                      onChange={setTeamFilter}
-                    >
-                      <option value="all">All</option>
-                      {data.teams.map((team) => (
-                        <option key={team.id} value={team.id}>
-                          {team.name}
-                        </option>
-                      ))}
-                    </SelectField>
-                    <div className="flex items-end">
-                      <button
-                        type="button"
-                        onClick={resetFilters}
-                        className="btn-soft inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg px-3 text-sm font-semibold"
+                    {team.urgentTickets > 0 ? (
+                      <span
+                        className={`rounded px-1.5 py-0.5 font-semibold tabular-nums ${
+                          isActiveFilter
+                            ? "bg-red-300/20 text-red-100"
+                            : "bg-red-50 text-red-700"
+                        }`}
                       >
-                        <SlidersHorizontal className="h-4 w-4" />
-                        Reset
-                      </button>
-                    </div>
+                        {team.urgentTickets} urgent
+                      </span>
+                    ) : null}
                   </div>
-                  {showBreachedOnly ? (
-                    <button
-                      type="button"
-                      onClick={() => setShowBreachedOnly(false)}
-                      className="mt-3 inline-flex h-8 items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 text-xs font-semibold text-red-700"
-                    >
-                      <XCircle className="h-4 w-4" />
-                      SLA breaches only
-                    </button>
-                  ) : null}
+                </button>
+              );
+            })}
+          </div>
+        ) : null}
+
+        <section className="surface-card mt-6 overflow-hidden">
+          <div className="border-b border-stone-200/70 bg-gradient-to-b from-stone-50 to-white p-5">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex min-w-0 items-center gap-3">
+                <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-stone-900 to-stone-700 text-white shadow-md ring-1 ring-black/10">
+                  <Inbox className="h-5 w-5" />
                 </div>
-                <div className="fancy-scroll max-h-[calc(100vh-360px)] min-h-[360px] overflow-y-auto">
-                  {filteredTickets.length > 0 ? (
-                    filteredTickets.map((ticket) => (
-                      <TicketListItem
-                        key={ticket.id}
-                        ticket={ticket}
-                        selected={selectedTicket?.id === ticket.id}
-                        nowMs={nowMs}
-                        onSelect={() => setSelectedId(ticket.id)}
-                      />
-                    ))
-                  ) : (
-                    <EmptyState />
-                  )}
+                <div className="min-w-0">
+                  <h2 className="text-[15px] font-semibold tracking-tight text-stone-950">
+                    Triage queue
+                  </h2>
+                  <p className="text-[12.5px] text-stone-500">
+                    <span className="font-semibold text-stone-700 tabular-nums">
+                      {activeTickets}
+                    </span>{" "}
+                    active,{" "}
+                    <span className="tabular-nums">{data.tickets.length}</span>{" "}
+                    total
+                  </p>
                 </div>
-              </section>
-
-              <section
-                id="ticket-detail"
-                ref={detailRef}
-                className="surface-card scroll-mt-24 overflow-hidden"
-              >
-                {selectedTicket ? (
-                  <div>
-                    <div className="hero-ink relative overflow-hidden border-b border-black/40 px-6 py-6 text-white">
-                      <div className="pointer-events-none absolute -right-16 -top-16 h-56 w-56 rounded-full bg-amber-400/10 blur-3xl" />
-                      <div className="pointer-events-none absolute -left-10 -bottom-10 h-48 w-48 rounded-full bg-sky-400/10 blur-3xl" />
-                      <div className="relative flex flex-wrap items-start justify-between gap-4">
-                        <div className="min-w-0">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span
-                              className={`inline-flex h-7 items-center gap-1 rounded-md px-2 text-[11px] font-semibold ${priorityClass[selectedTicket.priority]}`}
-                            >
-                              {priorityIcon(selectedTicket.priority)}
-                              {selectedTicket.priority}
-                            </span>
-                            <span className="rounded-md bg-white/10 px-2 py-1 font-mono text-[11px] tracking-wide text-stone-200 ring-1 ring-white/10">
-                              TK-{selectedTicket.ticketNumber}
-                            </span>
-                            <span className="inline-flex h-7 items-center rounded-md bg-white/10 px-2 text-[11px] font-semibold capitalize text-stone-100 ring-1 ring-white/10">
-                              {label(selectedTicket.status)}
-                            </span>
-                          </div>
-                          <h2 className="mt-4 max-w-3xl text-[26px] font-semibold leading-[1.2] tracking-tight">
-                            {selectedTicket.title}
-                          </h2>
-                          <p className="mt-3 max-w-3xl text-[14px] leading-6 text-stone-300/90">
-                            {selectedTicket.description || "No description yet."}
-                          </p>
-                          <p className="mt-3 text-[12px] text-stone-400">
-                            Reported by{" "}
-                            <span className="font-medium text-stone-200">
-                              {selectedTicket.reporterEmail ?? "system alert"}
-                            </span>
-                            {" · "}
-                            <span className="tabular-nums">
-                              {formatDateTime(selectedTicket.createdAt)}
-                            </span>
-                          </p>
-                        </div>
-                        <div className="rounded-xl border border-white/10 bg-white/[0.04] p-3 backdrop-blur">
-                          <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-stone-400">
-                            Last refresh
-                          </p>
-                          <p className="mt-1 text-[12.5px] font-semibold tabular-nums">
-                            {formatDateTime(data.refreshedAt)}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="p-6">
-                      <div className="grid gap-3 md:grid-cols-3">
-                        <button
-                          type="button"
-                          disabled={isPending || !canMutate}
-                          onClick={() =>
-                            runMutation(async () => {
-                              await patchTicket(selectedTicket.id, {
-                                status: "in_progress",
-                                comment: "Acknowledged from the console.",
-                              });
-                              return "Acknowledged";
-                            })
-                          }
-                          className="btn-primary inline-flex h-11 items-center justify-center gap-2 rounded-xl px-3 text-sm font-semibold disabled:opacity-60"
-                        >
-                          <CheckCircle2 className="h-4 w-4" />
-                          Acknowledge
-                        </button>
-                        <button
-                          type="button"
-                          disabled={isPending || !canMutate}
-                          onClick={() =>
-                            runMutation(async () => {
-                              await patchTicket(selectedTicket.id, {
-                                status: "resolved",
-                                comment: "Resolved from the console.",
-                              });
-                              return "Resolved";
-                            })
-                          }
-                          className="btn-success inline-flex h-11 items-center justify-center gap-2 rounded-xl px-3 text-sm font-semibold disabled:opacity-60"
-                        >
-                          <CheckCircle2 className="h-4 w-4" />
-                          Resolve
-                        </button>
-                        <button
-                          type="button"
-                          disabled={isPending || !canMutate}
-                          onClick={() =>
-                            runMutation(async () => {
-                              await patchTicket(selectedTicket.id, {
-                                status: "triaged",
-                                comment: "Reopened from the console.",
-                              });
-                              return "Reopened";
-                            })
-                          }
-                          className="btn-soft inline-flex h-11 items-center justify-center gap-2 rounded-xl px-3 text-sm font-semibold disabled:opacity-60"
-                        >
-                          <XCircle className="h-4 w-4" />
-                          Reopen
-                        </button>
-                      </div>
-
-                      <div className="mt-5 grid gap-3 md:grid-cols-2">
-                        <SelectField
-                          labelText="Status"
-                          value={selectedTicket.status}
-                          disabled={isPending || !canMutate}
-                          onChange={(value) =>
-                            runMutation(async () => {
-                              await patchTicket(selectedTicket.id, {
-                                status: value,
-                                comment: `Status changed to ${label(value)}.`,
-                              });
-                              return "Status updated";
-                            })
-                          }
-                        >
-                          {statuses.map((status) => (
-                            <option key={status} value={status}>
-                              {label(status)}
-                            </option>
-                          ))}
-                        </SelectField>
-                        <SelectField
-                          labelText="Priority"
-                          value={selectedTicket.priority}
-                          disabled={isPending || !canMutate}
-                          onChange={(value) =>
-                            runMutation(async () => {
-                              await patchTicket(selectedTicket.id, {
-                                priority: value,
-                                comment: `Priority changed to ${value}.`,
-                              });
-                              return "Priority updated";
-                            })
-                          }
-                        >
-                          {priorities.map((priority) => (
-                            <option key={priority} value={priority}>
-                              {priority}
-                            </option>
-                          ))}
-                        </SelectField>
-                        <SelectField
-                          labelText="Team"
-                          value={selectedTicket.assignedTeamId ?? ""}
-                          disabled={isPending || !canMutate}
-                          onChange={(value) =>
-                            runMutation(async () => {
-                              await patchTicket(selectedTicket.id, {
-                                assignedTeamId: value || null,
-                                assignedUserId: null,
-                                comment: "Team assignment updated.",
-                              });
-                              return "Team updated";
-                            })
-                          }
-                        >
-                          <option value="">Unrouted</option>
-                          {data.teams.map((team) => (
-                            <option key={team.id} value={team.id}>
-                              {team.name}
-                            </option>
-                          ))}
-                        </SelectField>
-                        <SelectField
-                          labelText="Owner"
-                          value={selectedTicket.assignedUserId ?? ""}
-                          disabled={isPending || !canMutate}
-                          onChange={(value) =>
-                            runMutation(async () => {
-                              await patchTicket(selectedTicket.id, {
-                                assignedUserId: value || null,
-                                comment: "Owner assignment updated.",
-                              });
-                              return "Owner updated";
-                            })
-                          }
-                        >
-                          <option value="">Unassigned</option>
-                          {selectedTeamUsers.map((user) => (
-                            <option key={user.id} value={user.id}>
-                              {user.fullName ?? user.email}
-                            </option>
-                          ))}
-                        </SelectField>
-                      </div>
-
-                      <div className="mt-6 grid gap-5 lg:grid-cols-[minmax(0,1fr)_280px]">
-                        <form onSubmit={submitComment} className="space-y-3">
-                          <label className="grid min-w-0 gap-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-stone-500">
-                            Comment
-                            <textarea
-                              value={comment}
-                              onChange={(event) => setComment(event.target.value)}
-                              rows={5}
-                              placeholder="Add an update for the team…"
-                              disabled={isPending || !canMutate}
-                              className="input-field w-full min-w-0 resize-none px-3 py-2.5 text-sm normal-case tracking-normal text-stone-900 placeholder:text-stone-400 disabled:bg-stone-50"
-                            />
-                          </label>
-                          <button
-                            type="submit"
-                            disabled={
-                              !comment.trim() || isPending || !canMutate
-                            }
-                            className="btn-soft inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl px-3 text-sm font-semibold disabled:opacity-60"
-                          >
-                            <MessageSquarePlus className="h-4 w-4" />
-                            Add comment
-                          </button>
-                        </form>
-
-                        <div className="surface-inset p-4">
-                          <p className="text-[13px] font-semibold tracking-tight text-stone-950">
-                            Incident shape
-                          </p>
-                          <div className="mt-4 space-y-3 text-sm">
-                            <div className="flex items-center justify-between">
-                              <span className="text-stone-500">Duplicates</span>
-                              <span className="rounded-md bg-white px-2 py-0.5 font-semibold tabular-nums text-stone-900 ring-1 ring-stone-200">
-                                {selectedTicket.duplicateCount}
-                              </span>
-                            </div>
-                            <div className="flex items-center justify-between">
-                              <span className="text-stone-500">Score</span>
-                              <span className="rounded-md bg-white px-2 py-0.5 font-mono text-[12px] font-semibold tabular-nums text-stone-900 ring-1 ring-stone-200">
-                                {selectedTicket.importanceScore} ×{" "}
-                                {selectedTicket.urgencyScore}
-                              </span>
-                            </div>
-                            <div className="flex items-center justify-between">
-                              <span className="text-stone-500">SLA</span>
-                              <span className="font-semibold tabular-nums text-stone-900">
-                                {selectedTicket.slaDueAt
-                                  ? formatDateTime(selectedTicket.slaDueAt)
-                                  : "Not set"}
-                              </span>
-                            </div>
-                            {selectedIncident ? (
-                              <div className="border-t border-stone-200 pt-3 text-[12.5px] leading-5 text-stone-600">
-                                <span className="font-semibold text-stone-800">
-                                  {selectedIncident.blastCount}
-                                </span>{" "}
-                                linked alerts · confidence{" "}
-                                <span className="font-semibold text-stone-800">
-                                  {selectedIncident.confidence ?? "n/a"}
-                                </span>
-                              </div>
-                            ) : null}
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="mt-7 border-t border-stone-200/70 pt-5">
-                        <div className="mb-4 flex items-center justify-between">
-                          <h3 className="text-[15px] font-semibold tracking-tight text-stone-950">
-                            Timeline
-                          </h3>
-                          <span className="rounded-full bg-stone-100 px-2.5 py-1 text-[11px] font-semibold tabular-nums text-stone-600 ring-1 ring-stone-200/70">
-                            {selectedTicket.comments.length} comments
-                          </span>
-                        </div>
-                        <div className="space-y-5">
-                          {selectedTicket.comments.length > 0 ? (
-                            selectedTicket.comments.map((item, index) => (
-                              <div key={item.id} className="relative grid gap-2 pl-6">
-                                <span
-                                  aria-hidden
-                                  className="absolute left-1.5 top-1.5 h-2.5 w-2.5 rounded-full bg-gradient-to-br from-stone-700 to-stone-900 ring-4 ring-stone-100"
-                                />
-                                {index < selectedTicket.comments.length - 1 ? (
-                                  <span
-                                    aria-hidden
-                                    className="absolute left-[10px] top-4 h-[calc(100%+0.75rem)] w-px bg-stone-200"
-                                  />
-                                ) : null}
-                                <p className="text-[14px] leading-6 text-stone-900">
-                                  {item.body}
-                                </p>
-                                <p className="text-[11.5px] text-stone-500">
-                                  <span className="font-medium text-stone-700">
-                                    {item.authorEmail ?? "system"}
-                                  </span>{" "}
-                                  ·{" "}
-                                  <span className="tabular-nums">
-                                    {formatDateTime(item.createdAt)}
-                                  </span>
-                                </p>
-                              </div>
-                            ))
-                          ) : (
-                            <p className="text-sm text-stone-500">
-                              No comments yet.
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="grid min-h-[520px] place-items-center p-8 text-center">
-                    <div>
-                      <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-stone-900 to-stone-700 text-white shadow-lg ring-1 ring-black/10">
-                        <Sparkles className="h-7 w-7" />
-                      </div>
-                      <p className="mt-4 text-[15px] font-semibold tracking-tight text-stone-950">
-                        Select or create a ticket
-                      </p>
-                      <p className="mt-1 text-sm text-stone-500">
-                        Choose one from the queue, or click New ticket above.
-                      </p>
-                    </div>
-                  </div>
-                )}
-              </section>
+              </div>
+              <span className="rounded-full border border-stone-200 bg-white px-2.5 py-1 text-[11px] font-semibold tabular-nums text-stone-600 shadow-sm">
+                {filteredTickets.length} shown
+              </span>
             </div>
-          </section>
-        </div>
-      </div>
+            <div className="relative mt-4">
+              <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-stone-400" />
+              <input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Search by title, owner, team..."
+                className="input-field h-10 w-full min-w-0 pl-9 pr-3 text-sm text-stone-900 placeholder:text-stone-400"
+              />
+            </div>
+            <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+              <SelectField
+                labelText="Status"
+                value={statusFilter}
+                onChange={(value) => setStatusFilter(value as FilterStatus)}
+              >
+                <option value="active">Active</option>
+                <option value="all">All</option>
+                {statuses.map((status) => (
+                  <option key={status} value={status}>
+                    {label(status)}
+                  </option>
+                ))}
+              </SelectField>
+              <SelectField
+                labelText="Priority"
+                value={priorityFilter}
+                onChange={(value) => setPriorityFilter(value as "all" | Priority)}
+              >
+                <option value="all">All</option>
+                {priorities.map((priority) => (
+                  <option key={priority} value={priority}>
+                    {priority}
+                  </option>
+                ))}
+              </SelectField>
+              <SelectField labelText="Team" value={teamFilter} onChange={setTeamFilter}>
+                <option value="all">All</option>
+                {data.teams.map((team) => (
+                  <option key={team.id} value={team.id}>
+                    {team.name}
+                  </option>
+                ))}
+              </SelectField>
+              <div className="flex items-end">
+                <button
+                  type="button"
+                  onClick={resetFilters}
+                  className="btn-soft inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg px-3 text-sm font-semibold"
+                >
+                  <SlidersHorizontal className="h-4 w-4" />
+                  Reset
+                </button>
+              </div>
+            </div>
+            {showBreachedOnly ? (
+              <button
+                type="button"
+                onClick={() => setShowBreachedOnly(false)}
+                className="mt-3 inline-flex h-8 items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 text-xs font-semibold text-red-700"
+              >
+                <XCircle className="h-4 w-4" />
+                SLA breaches only
+              </button>
+            ) : null}
+          </div>
+          <div>
+            {filteredTickets.length > 0 ? (
+              filteredTickets.map((ticket) => (
+                <TicketListItem key={ticket.id} ticket={ticket} nowMs={nowMs} />
+              ))
+            ) : (
+              <EmptyState />
+            )}
+          </div>
+        </section>
+      </section>
 
       <NewTicketModal
         isOpen={isNewTicketOpen}
@@ -1479,15 +1133,641 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
         isPending={isPending}
         canMutate={canMutate}
       />
+      <Notice message={notice} />
+    </main>
+  );
+}
 
-      {notice ? (
-        <div className="fixed bottom-5 left-1/2 z-50 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 rounded-2xl border border-stone-200 bg-white/95 px-4 py-3 text-sm font-semibold text-stone-800 shadow-[0_24px_48px_-24px_rgba(20,14,5,0.45)] backdrop-blur">
-          <div className="flex items-center gap-2">
-            <span className="h-2 w-2 rounded-full bg-emerald-500 ring-pulse" />
-            {notice}
+export function TicketDetailConsole({
+  initialData,
+  ticketId,
+}: {
+  initialData: DashboardData;
+  ticketId: string;
+}) {
+  const {
+    data,
+    notice,
+    isPending,
+    runMutation,
+    refresh,
+    checkHealth,
+    patchTicket,
+    addComment,
+  } = useDashboardState(initialData);
+  const [comment, setComment] = useState("");
+
+  const ticket = data.tickets.find((item) => item.id === ticketId) ?? null;
+  const incident = ticket?.incidentId
+    ? data.incidents.find((item) => item.id === ticket.incidentId) ?? null
+    : null;
+  const isLive = data.source === "database";
+  const canMutate = isLive || (data.source === "demo" && !data.dbError);
+  const teamUsers = usersForTeam(data.users, ticket?.assignedTeamId ?? null);
+
+  function submitComment(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!ticket || !comment.trim()) return;
+    runMutation(async () => {
+      await addComment(ticket.id, comment);
+      setComment("");
+      return "Comment added";
+    });
+  }
+
+  return (
+    <main className="min-h-screen overflow-x-hidden text-stone-900">
+      <AppHeader
+        title={ticket ? `TK-${ticket.ticketNumber}` : "Ticket not found"}
+        active="queue"
+        actions={
+          <>
+            <HealthButton
+              isLive={isLive}
+              isPending={isPending}
+              onClick={() => runMutation(checkHealth)}
+            />
+            <Link
+              href="/"
+              className="btn-soft inline-flex h-10 items-center justify-center gap-2 rounded-full px-4 text-[12.5px] font-semibold"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              Queue
+            </Link>
+            <button
+              type="button"
+              onClick={() =>
+                runMutation(() => refresh().then(() => "Refreshed"))
+              }
+              disabled={isPending}
+              className="btn-primary inline-flex h-10 items-center justify-center gap-2 rounded-full px-4 text-[12.5px] font-semibold disabled:opacity-60"
+            >
+              <RotateCcw
+                className={`h-4 w-4 ${isPending ? "animate-spin" : ""}`}
+              />
+              Refresh
+            </button>
+          </>
+        }
+      />
+
+      <section className="mx-auto max-w-[1120px] px-4 py-6 sm:px-6">
+        {ticket ? (
+          <article className="surface-card overflow-hidden">
+            <div className="hero-ink relative overflow-hidden border-b border-black/40 px-6 py-6 text-white">
+              <div className="pointer-events-none absolute -right-16 -top-16 h-56 w-56 rounded-full bg-amber-400/10 blur-3xl" />
+              <div className="pointer-events-none absolute -bottom-10 -left-10 h-48 w-48 rounded-full bg-sky-400/10 blur-3xl" />
+              <div className="relative flex flex-wrap items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span
+                      className={`inline-flex h-7 items-center gap-1 rounded-md px-2 text-[11px] font-semibold ${priorityClass[ticket.priority]}`}
+                    >
+                      {priorityIcon(ticket.priority)}
+                      {ticket.priority}
+                    </span>
+                    <span className="rounded-md bg-white/10 px-2 py-1 font-mono text-[11px] tracking-wide text-stone-200 ring-1 ring-white/10">
+                      TK-{ticket.ticketNumber}
+                    </span>
+                    <span className="inline-flex h-7 items-center rounded-md bg-white/10 px-2 text-[11px] font-semibold capitalize text-stone-100 ring-1 ring-white/10">
+                      {label(ticket.status)}
+                    </span>
+                    <span className="inline-flex h-7 items-center rounded-md bg-white/10 px-2 text-[11px] font-semibold text-stone-100 ring-1 ring-white/10">
+                      {ticket.createdFrom}
+                    </span>
+                  </div>
+                  <h2 className="mt-4 max-w-3xl text-[26px] font-semibold leading-[1.2] tracking-tight">
+                    {ticket.title}
+                  </h2>
+                  <p className="mt-3 max-w-3xl text-[14px] leading-6 text-stone-300/90">
+                    {ticket.description || "No description yet."}
+                  </p>
+                  <p className="mt-3 text-[12px] text-stone-400">
+                    Reported by{" "}
+                    <span className="font-medium text-stone-200">
+                      {ticket.reporterEmail ?? "system alert"}
+                    </span>
+                    {" · "}
+                    <span className="tabular-nums">
+                      {formatDateTime(ticket.createdAt)}
+                    </span>
+                  </p>
+                </div>
+                <div className="rounded-xl border border-white/10 bg-white/[0.04] p-3 backdrop-blur">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-stone-400">
+                    Last refresh
+                  </p>
+                  <p className="mt-1 text-[12.5px] font-semibold tabular-nums">
+                    {formatDateTime(data.refreshedAt)}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-6">
+              <div className="grid gap-3 md:grid-cols-3">
+                <button
+                  type="button"
+                  disabled={isPending || !canMutate}
+                  onClick={() =>
+                    runMutation(async () => {
+                      await patchTicket(ticket.id, {
+                        status: "in_progress",
+                        comment: "Acknowledged from the console.",
+                      });
+                      return "Acknowledged";
+                    })
+                  }
+                  className="btn-primary inline-flex h-11 items-center justify-center gap-2 rounded-xl px-3 text-sm font-semibold disabled:opacity-60"
+                >
+                  <CheckCircle2 className="h-4 w-4" />
+                  Acknowledge
+                </button>
+                <button
+                  type="button"
+                  disabled={isPending || !canMutate}
+                  onClick={() =>
+                    runMutation(async () => {
+                      await patchTicket(ticket.id, {
+                        status: "resolved",
+                        comment: "Resolved from the console.",
+                      });
+                      return "Resolved";
+                    })
+                  }
+                  className="btn-success inline-flex h-11 items-center justify-center gap-2 rounded-xl px-3 text-sm font-semibold disabled:opacity-60"
+                >
+                  <CheckCircle2 className="h-4 w-4" />
+                  Resolve
+                </button>
+                <button
+                  type="button"
+                  disabled={isPending || !canMutate}
+                  onClick={() =>
+                    runMutation(async () => {
+                      await patchTicket(ticket.id, {
+                        status: "triaged",
+                        comment: "Reopened from the console.",
+                      });
+                      return "Reopened";
+                    })
+                  }
+                  className="btn-soft inline-flex h-11 items-center justify-center gap-2 rounded-xl px-3 text-sm font-semibold disabled:opacity-60"
+                >
+                  <XCircle className="h-4 w-4" />
+                  Reopen
+                </button>
+              </div>
+
+              <div className="mt-5 grid gap-3 md:grid-cols-2">
+                <SelectField
+                  labelText="Status"
+                  value={ticket.status}
+                  disabled={isPending || !canMutate}
+                  onChange={(value) =>
+                    runMutation(async () => {
+                      await patchTicket(ticket.id, {
+                        status: value,
+                        comment: `Status changed to ${label(value)}.`,
+                      });
+                      return "Status updated";
+                    })
+                  }
+                >
+                  {statuses.map((status) => (
+                    <option key={status} value={status}>
+                      {label(status)}
+                    </option>
+                  ))}
+                </SelectField>
+                <SelectField
+                  labelText="Priority"
+                  value={ticket.priority}
+                  disabled={isPending || !canMutate}
+                  onChange={(value) =>
+                    runMutation(async () => {
+                      await patchTicket(ticket.id, {
+                        priority: value,
+                        comment: `Priority changed to ${value}.`,
+                      });
+                      return "Priority updated";
+                    })
+                  }
+                >
+                  {priorities.map((priority) => (
+                    <option key={priority} value={priority}>
+                      {priority}
+                    </option>
+                  ))}
+                </SelectField>
+                <SelectField
+                  labelText="Team"
+                  value={ticket.assignedTeamId ?? ""}
+                  disabled={isPending || !canMutate}
+                  onChange={(value) =>
+                    runMutation(async () => {
+                      await patchTicket(ticket.id, {
+                        assignedTeamId: value || null,
+                        assignedUserId: null,
+                        comment: "Team assignment updated.",
+                      });
+                      return "Team updated";
+                    })
+                  }
+                >
+                  <option value="">Unrouted</option>
+                  {data.teams.map((team) => (
+                    <option key={team.id} value={team.id}>
+                      {team.name}
+                    </option>
+                  ))}
+                </SelectField>
+                <SelectField
+                  labelText="Owner"
+                  value={ticket.assignedUserId ?? ""}
+                  disabled={isPending || !canMutate}
+                  onChange={(value) =>
+                    runMutation(async () => {
+                      await patchTicket(ticket.id, {
+                        assignedUserId: value || null,
+                        comment: "Owner assignment updated.",
+                      });
+                      return "Owner updated";
+                    })
+                  }
+                >
+                  <option value="">Unassigned</option>
+                  {teamUsers.map((user) => (
+                    <option key={user.id} value={user.id}>
+                      {user.fullName ?? user.email}
+                    </option>
+                  ))}
+                </SelectField>
+              </div>
+
+              <div className="mt-6 grid gap-5 lg:grid-cols-[minmax(0,1fr)_280px]">
+                <form onSubmit={submitComment} className="space-y-3">
+                  <label className="grid min-w-0 gap-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-stone-500">
+                    Comment
+                    <textarea
+                      value={comment}
+                      onChange={(event) => setComment(event.target.value)}
+                      rows={5}
+                      placeholder="Add an update for the team..."
+                      disabled={isPending || !canMutate}
+                      className="input-field w-full min-w-0 resize-none px-3 py-2.5 text-sm normal-case tracking-normal text-stone-900 placeholder:text-stone-400 disabled:bg-stone-50"
+                    />
+                  </label>
+                  <button
+                    type="submit"
+                    disabled={!comment.trim() || isPending || !canMutate}
+                    className="btn-soft inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl px-3 text-sm font-semibold disabled:opacity-60"
+                  >
+                    <MessageSquarePlus className="h-4 w-4" />
+                    Add comment
+                  </button>
+                </form>
+
+                <IncidentShape ticket={ticket} incident={incident} />
+              </div>
+
+              <TicketTimeline ticket={ticket} />
+            </div>
+          </article>
+        ) : (
+          <div className="surface-card grid min-h-[520px] place-items-center p-8 text-center">
+            <div>
+              <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-stone-900 to-stone-700 text-white shadow-lg ring-1 ring-black/10">
+                <Sparkles className="h-7 w-7" />
+              </div>
+              <p className="mt-4 text-[15px] font-semibold tracking-tight text-stone-950">
+                Ticket not found
+              </p>
+              <p className="mt-1 text-sm text-stone-500">
+                It may have been closed or removed from the current dashboard.
+              </p>
+              <Link
+                href="/"
+                className="btn-primary mt-5 inline-flex h-10 items-center justify-center gap-2 rounded-xl px-4 text-sm font-semibold"
+              >
+                <ArrowLeft className="h-4 w-4" />
+                Back to queue
+              </Link>
+            </div>
           </div>
+        )}
+      </section>
+      <Notice message={notice} />
+    </main>
+  );
+}
+
+function IncidentShape({
+  ticket,
+  incident,
+}: {
+  ticket: TicketQueueItem;
+  incident: IncidentSnapshot | null;
+}) {
+  return (
+    <div className="surface-inset p-4">
+      <p className="text-[13px] font-semibold tracking-tight text-stone-950">
+        Incident shape
+      </p>
+      <div className="mt-4 space-y-3 text-sm">
+        <div className="flex items-center justify-between">
+          <span className="text-stone-500">Duplicates</span>
+          <span className="rounded-md bg-white px-2 py-0.5 font-semibold tabular-nums text-stone-900 ring-1 ring-stone-200">
+            {ticket.duplicateCount}
+          </span>
         </div>
-      ) : null}
+        <div className="flex items-center justify-between">
+          <span className="text-stone-500">Score</span>
+          <span className="rounded-md bg-white px-2 py-0.5 font-mono text-[12px] font-semibold tabular-nums text-stone-900 ring-1 ring-stone-200">
+            {ticket.importanceScore} x {ticket.urgencyScore}
+          </span>
+        </div>
+        <div className="flex items-center justify-between">
+          <span className="text-stone-500">SLA</span>
+          <span className="font-semibold tabular-nums text-stone-900">
+            {ticket.slaDueAt ? formatDateTime(ticket.slaDueAt) : "Not set"}
+          </span>
+        </div>
+        {incident ? (
+          <div className="border-t border-stone-200 pt-3 text-[12.5px] leading-5 text-stone-600">
+            <span className="font-semibold text-stone-800">
+              {incident.blastCount}
+            </span>{" "}
+            linked alerts, confidence{" "}
+            <span className="font-semibold text-stone-800">
+              {incident.confidence ?? "n/a"}
+            </span>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function TicketTimeline({ ticket }: { ticket: TicketQueueItem }) {
+  return (
+    <div className="mt-7 border-t border-stone-200/70 pt-5">
+      <div className="mb-4 flex items-center justify-between">
+        <h3 className="text-[15px] font-semibold tracking-tight text-stone-950">
+          Timeline
+        </h3>
+        <span className="rounded-full bg-stone-100 px-2.5 py-1 text-[11px] font-semibold tabular-nums text-stone-600 ring-1 ring-stone-200/70">
+          {ticket.comments.length} comments
+        </span>
+      </div>
+      <div className="space-y-5">
+        {ticket.comments.length > 0 ? (
+          ticket.comments.map((item, index) => (
+            <div key={item.id} className="relative grid gap-2 pl-6">
+              <span
+                aria-hidden
+                className="absolute left-1.5 top-1.5 h-2.5 w-2.5 rounded-full bg-gradient-to-br from-stone-700 to-stone-900 ring-4 ring-stone-100"
+              />
+              {index < ticket.comments.length - 1 ? (
+                <span
+                  aria-hidden
+                  className="absolute left-[10px] top-4 h-[calc(100%+0.75rem)] w-px bg-stone-200"
+                />
+              ) : null}
+              <p className="text-[14px] leading-6 text-stone-900">
+                {item.body}
+              </p>
+              <p className="text-[11.5px] text-stone-500">
+                <span className="font-medium text-stone-700">
+                  {item.authorEmail ?? "system"}
+                </span>{" "}
+                ·{" "}
+                <span className="tabular-nums">
+                  {formatDateTime(item.createdAt)}
+                </span>
+              </p>
+            </div>
+          ))
+        ) : (
+          <p className="text-sm text-stone-500">No comments yet.</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export function OverviewConsole({ initialData }: { initialData: DashboardData }) {
+  const { data, notice, isPending, runMutation, refresh, checkHealth } =
+    useDashboardState(initialData);
+  const nowMs = new Date(data.refreshedAt).getTime();
+  const isLive = data.source === "database";
+  const breachedTickets = data.tickets.filter((ticket) =>
+    isBreachedTicket(ticket, nowMs),
+  );
+  const recentTickets = data.tickets.slice(0, 8);
+
+  return (
+    <main className="min-h-screen overflow-x-hidden text-stone-900">
+      <AppHeader
+        title="Operations overview"
+        active="overview"
+        actions={
+          <>
+            <HealthButton
+              isLive={isLive}
+              isPending={isPending}
+              onClick={() => runMutation(checkHealth)}
+            />
+            <button
+              type="button"
+              onClick={() =>
+                runMutation(() => refresh().then(() => "Refreshed"))
+              }
+              disabled={isPending}
+              className="btn-primary inline-flex h-10 items-center justify-center gap-2 rounded-full px-4 text-[12.5px] font-semibold disabled:opacity-60"
+            >
+              <RotateCcw
+                className={`h-4 w-4 ${isPending ? "animate-spin" : ""}`}
+              />
+              Refresh
+            </button>
+          </>
+        }
+      />
+
+      <section className="mx-auto grid max-w-[1240px] gap-6 px-4 py-6 sm:px-6">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          {data.metrics.map((metric) => (
+            <MetricCard
+              key={metric.key}
+              metric={
+                metric.key === "slaBreaches"
+                  ? { ...metric, value: String(breachedTickets.length) }
+                  : metric
+              }
+            />
+          ))}
+        </div>
+
+        <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
+          <section className="surface-card overflow-hidden">
+            <div className="border-b border-stone-200/70 bg-gradient-to-b from-stone-50 to-white p-5">
+              <div className="flex items-center gap-3">
+                <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-red-500 to-red-700 text-white shadow-md ring-1 ring-black/10">
+                  <AlertTriangle className="h-5 w-5" />
+                </div>
+                <div>
+                  <h2 className="text-[15px] font-semibold tracking-tight text-stone-950">
+                    SLA breach watch
+                  </h2>
+                  <p className="text-[12.5px] text-stone-500">
+                    Past due active tickets that need attention.
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div>
+              {breachedTickets.length > 0 ? (
+                breachedTickets.map((ticket) => (
+                  <TicketListItem key={ticket.id} ticket={ticket} nowMs={nowMs} />
+                ))
+              ) : (
+                <div className="px-5 py-12 text-center text-sm text-stone-500">
+                  No active SLA breaches.
+                </div>
+              )}
+            </div>
+          </section>
+
+          <section className="surface-card p-5">
+            <div className="flex items-center gap-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-sky-500 to-sky-700 text-white shadow-md ring-1 ring-black/10">
+                <Users className="h-5 w-5" />
+              </div>
+              <div>
+                <h2 className="text-[15px] font-semibold tracking-tight text-stone-950">
+                  Team load
+                </h2>
+                <p className="text-[12.5px] text-stone-500">
+                  Current open work by team.
+                </p>
+              </div>
+            </div>
+            <div className="mt-5 space-y-3">
+              {data.teamLoad.map((team) => (
+                <div
+                  key={team.team}
+                  className="rounded-xl border border-stone-200 bg-white p-3"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="font-semibold text-stone-900">
+                      {team.team}
+                    </span>
+                    <span className="font-mono text-[12px] font-semibold tabular-nums text-stone-500">
+                      {team.openTickets} open
+                    </span>
+                  </div>
+                  <div className="mt-2 h-2 overflow-hidden rounded-full bg-stone-100">
+                    <div
+                      className="h-full rounded-full bg-gradient-to-r from-amber-400 to-red-500"
+                      style={{
+                        width: `${Math.min(100, team.openTickets * 16)}%`,
+                      }}
+                    />
+                  </div>
+                  <p className="mt-2 text-[12px] text-stone-500">
+                    {team.urgentTickets} urgent, {team.members} members
+                  </p>
+                </div>
+              ))}
+            </div>
+          </section>
+        </div>
+
+        <div className="grid gap-6 xl:grid-cols-2">
+          <section className="surface-card p-5">
+            <div className="flex items-center gap-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-stone-900 to-stone-700 text-white shadow-md ring-1 ring-black/10">
+                <Activity className="h-5 w-5" />
+              </div>
+              <div>
+                <h2 className="text-[15px] font-semibold tracking-tight text-stone-950">
+                  Incident snapshots
+                </h2>
+                <p className="text-[12.5px] text-stone-500">
+                  Open incident clusters and duplicate pressure.
+                </p>
+              </div>
+            </div>
+            <div className="mt-5 space-y-3">
+              {data.incidents.map((incident) => (
+                <Link
+                  key={incident.id}
+                  href={`/#incident-${incident.id}`}
+                  className="block rounded-xl border border-stone-200 bg-white p-3 transition hover:border-stone-300"
+                >
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span
+                      className={`inline-flex h-6 items-center gap-1 rounded-md px-2 text-[11px] font-semibold ${priorityClass[incident.priority]}`}
+                    >
+                      {priorityIcon(incident.priority)}
+                      {incident.priority}
+                    </span>
+                    <span className="rounded-md bg-stone-100 px-2 py-1 text-[11px] font-semibold capitalize text-stone-600 ring-1 ring-stone-200">
+                      {incident.status}
+                    </span>
+                  </div>
+                  <p className="mt-2 text-[13.5px] font-semibold leading-5 text-stone-900">
+                    {incident.title}
+                  </p>
+                  <p className="mt-2 text-[12px] text-stone-500">
+                    {incident.blastCount} linked alerts, last seen{" "}
+                    {formatDateTime(incident.lastSeenAt)}
+                  </p>
+                </Link>
+              ))}
+            </div>
+          </section>
+
+          <section className="surface-card p-5">
+            <div className="flex items-center gap-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-emerald-700 text-white shadow-md ring-1 ring-black/10">
+                <Inbox className="h-5 w-5" />
+              </div>
+              <div>
+                <h2 className="text-[15px] font-semibold tracking-tight text-stone-950">
+                  Recent queue movement
+                </h2>
+                <p className="text-[12.5px] text-stone-500">
+                  Latest tickets by update time.
+                </p>
+              </div>
+            </div>
+            <div className="mt-5 divide-y divide-stone-200/70">
+              {recentTickets.map((ticket) => (
+                <Link
+                  key={ticket.id}
+                  href={`/tickets/${ticket.id}`}
+                  className="flex items-center justify-between gap-3 py-3 transition hover:text-stone-950"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-[13.5px] font-semibold text-stone-900">
+                      {ticket.title}
+                    </p>
+                    <p className="mt-1 text-[12px] text-stone-500">
+                      {ticket.team} · {ticket.assignee}
+                    </p>
+                  </div>
+                  <span className="shrink-0 font-mono text-[11px] font-semibold text-stone-500">
+                    TK-{ticket.ticketNumber}
+                  </span>
+                </Link>
+              ))}
+            </div>
+          </section>
+        </div>
+      </section>
+      <Notice message={notice} />
     </main>
   );
 }

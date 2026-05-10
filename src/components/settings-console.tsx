@@ -3,11 +3,15 @@
 import {
   ArrowLeft,
   Database,
+  Inbox,
   Layers3,
+  LayoutDashboard,
   RadioTower,
   Send,
+  Settings,
   ShieldCheck,
 } from "lucide-react";
+import Link from "next/link";
 import { useState, useTransition } from "react";
 import type { FormEvent, ReactNode, RefObject } from "react";
 
@@ -204,15 +208,15 @@ export function SettingsConsole() {
   return (
     <main className="min-h-screen text-stone-900">
       <header className="glass-header sticky top-0 z-20 border-b border-stone-200/70">
-        <div className="mx-auto flex max-w-[920px] items-center justify-between gap-4 px-4 py-4 sm:px-6">
+        <div className="mx-auto flex max-w-[920px] flex-col gap-4 px-4 py-4 sm:px-6 md:flex-row md:items-center md:justify-between">
           <div className="flex min-w-0 items-center gap-3">
-            <a
+            <Link
               href="/"
               className="btn-soft inline-flex h-10 items-center justify-center gap-2 rounded-full px-3.5 text-[12.5px] font-semibold"
             >
               <ArrowLeft className="h-4 w-4" />
               Back
-            </a>
+            </Link>
             <div className="min-w-0">
               <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-stone-500">
                 Alert Triage
@@ -222,15 +226,40 @@ export function SettingsConsole() {
               </h1>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={() => runMutation(checkHealth)}
-            disabled={isPending}
-            className="btn-soft inline-flex h-10 items-center justify-center gap-2 rounded-full px-3.5 text-[12.5px] font-semibold disabled:opacity-60"
-          >
-            <ShieldCheck className="h-4 w-4" />
-            Check database
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <nav className="flex rounded-full border border-stone-200 bg-white/70 p-1 shadow-sm backdrop-blur">
+              <Link
+                href="/"
+                className="inline-flex h-9 items-center justify-center gap-2 rounded-full px-3 text-[12.5px] font-semibold text-stone-600 transition hover:bg-white hover:text-stone-950"
+              >
+                <Inbox className="h-4 w-4" />
+                Queue
+              </Link>
+              <Link
+                href="/overview"
+                className="inline-flex h-9 items-center justify-center gap-2 rounded-full px-3 text-[12.5px] font-semibold text-stone-600 transition hover:bg-white hover:text-stone-950"
+              >
+                <LayoutDashboard className="h-4 w-4" />
+                Overview
+              </Link>
+              <Link
+                href="/settings"
+                className="inline-flex h-9 items-center justify-center gap-2 rounded-full bg-stone-900 px-3 text-[12.5px] font-semibold text-white shadow-sm"
+              >
+                <Settings className="h-4 w-4" />
+                Settings
+              </Link>
+            </nav>
+            <button
+              type="button"
+              onClick={() => runMutation(checkHealth)}
+              disabled={isPending}
+              className="btn-soft inline-flex h-10 items-center justify-center gap-2 rounded-full px-3.5 text-[12.5px] font-semibold disabled:opacity-60"
+            >
+              <ShieldCheck className="h-4 w-4" />
+              Check database
+            </button>
+          </div>
         </div>
       </header>
 

@@ -11,11 +11,11 @@ import {
 import Link from "next/link";
 import type { ReactNode } from "react";
 
-type ShellSection = "home" | "tickets" | "overview" | "settings";
+export type ShellSection = "home" | "tickets" | "overview" | "settings";
 
 const navItems = [
   { href: "/", label: "Home", key: "home" as const, icon: Home },
-  { href: "/", label: "Tickets", key: "tickets" as const, icon: Inbox },
+  { href: "/tickets", label: "Tickets", key: "tickets" as const, icon: Inbox },
   {
     href: "/overview",
     label: "Overview",

@@ -22,6 +22,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import type { FormEvent, ReactNode, RefObject } from "react";
 import { HelpdeskShell } from "@/components/helpdesk-shell";
+import type { ShellSection } from "@/components/helpdesk-shell";
 import type {
   DashboardData,
   IncidentSnapshot,
@@ -580,7 +581,17 @@ function NewTicketModal({
   );
 }
 
-export function TriageConsole({ initialData }: { initialData: DashboardData }) {
+export function TriageConsole({
+  initialData,
+  active = "home",
+  title = "What needs me now",
+  subtitle = "Home",
+}: {
+  initialData: DashboardData;
+  active?: Extract<ShellSection, "home" | "tickets">;
+  title?: string;
+  subtitle?: string;
+}) {
   const { data, notice, isPending, runMutation, refresh, createTicket } =
     useDashboardState(initialData);
   const [query, setQuery] = useState("");
@@ -668,9 +679,9 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
 
   return (
     <HelpdeskShell
-      active="home"
-      title="What needs me now"
-      subtitle="Home"
+      active={active}
+      title={title}
+      subtitle={subtitle}
       actions={
         <>
           <button

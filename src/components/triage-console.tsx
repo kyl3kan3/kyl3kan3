@@ -421,7 +421,7 @@ function TicketListItem({
   return (
     <Link
       href={`/tickets/${ticket.id}`}
-      className="relative block w-full border-b border-stone-200/70 bg-white px-5 py-4 text-left transition-colors duration-200 last:border-b-0 hover:bg-stone-50/60"
+      className="relative block w-full border-b border-stone-200/70 bg-white px-4 py-3 text-left transition-colors duration-200 last:border-b-0 hover:bg-stone-50/60 sm:px-5"
     >
       <span
         className={`absolute bottom-3 left-0 top-3 w-[3px] rounded-r-full ${priorityRail[ticket.priority]} opacity-80`}
@@ -450,51 +450,21 @@ function TicketListItem({
           <h2 className="line-clamp-2 text-[13.5px] font-semibold leading-5 text-stone-900">
             {ticket.title}
           </h2>
-          <p className="mt-2 line-clamp-2 text-[12.5px] leading-5 text-stone-500">
-            {ticket.description || "No description yet."}
-          </p>
         </div>
         <span className="shrink-0 rounded-md bg-stone-900 px-2 py-1 font-mono text-[10px] font-semibold tracking-wide text-stone-50">
           TK-{ticket.ticketNumber}
         </span>
       </div>
-      <div className="mt-3 grid grid-cols-2 gap-3 text-[11px] sm:grid-cols-4">
-        <div className="min-w-0">
-          <p className="font-semibold uppercase tracking-[0.08em] text-stone-400">
-            Owner
-          </p>
-          <p className="mt-1 truncate font-medium text-stone-700">
-            {ticket.assignee}
-          </p>
-        </div>
-        <div className="min-w-0">
-          <p className="font-semibold uppercase tracking-[0.08em] text-stone-400">
-            Team
-          </p>
-          <p className="mt-1 truncate font-medium text-stone-700">
-            {ticket.team}
-          </p>
-        </div>
-        <div className="min-w-0">
-          <p className="font-semibold uppercase tracking-[0.08em] text-stone-400">
-            SLA
-          </p>
-          <p
-            className={`mt-1 truncate font-semibold tabular-nums ${
-              isBreached ? "text-red-700" : "text-stone-700"
-            }`}
-          >
-            {ticket.slaDueAt ? formatDateTime(ticket.slaDueAt) : "Not set"}
-          </p>
-        </div>
-        <div className="min-w-0">
-          <p className="font-semibold uppercase tracking-[0.08em] text-stone-400">
-            Score
-          </p>
-          <p className="mt-1 truncate font-mono font-semibold tabular-nums text-stone-700">
-            {ticket.importanceScore} x {ticket.urgencyScore}
-          </p>
-        </div>
+      <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-stone-500">
+        <span className="truncate">{ticket.team}</span>
+        <span className="truncate">{ticket.assignee}</span>
+        <span
+          className={`font-semibold tabular-nums ${
+            isBreached ? "text-red-700" : "text-stone-600"
+          }`}
+        >
+          {ticket.slaDueAt ? formatDateTime(ticket.slaDueAt) : "No SLA"}
+        </span>
       </div>
     </Link>
   );
@@ -819,7 +789,6 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
     isPending,
     runMutation,
     refresh,
-    checkHealth,
     createTicket,
   } = useDashboardState(initialData);
   const [query, setQuery] = useState("");
@@ -836,10 +805,6 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
   const breachedTickets = data.tickets.filter((ticket) =>
     isBreachedTicket(ticket, nowMs),
   ).length;
-  const p1Tickets = data.tickets.filter(
-    (ticket) => ticket.priority === "P1" && isActive(ticket),
-  ).length;
-  const avgAge = data.metrics.find((metric) => metric.key === "avgAge")?.value;
 
   function resetFilters() {
     setQuery("");
@@ -882,18 +847,20 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
     setIsNewTicketOpen(false);
   }
 
+  const hasActiveFilters =
+    query.trim().length > 0 ||
+    priorityFilter !== "all" ||
+    statusFilter !== "active" ||
+    teamFilter !== "all" ||
+    showBreachedOnly;
+
   return (
     <main className="min-h-screen overflow-x-hidden text-stone-900">
       <AppHeader
-        title="Triage inbox"
+        title="Inbox"
         active="queue"
         actions={
           <>
-            <HealthButton
-              isLive={isLive}
-              isPending={isPending}
-              onClick={() => runMutation(checkHealth)}
-            />
             <button
               type="button"
               onClick={() => setIsNewTicketOpen(true)}
@@ -920,32 +887,29 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
         }
       />
 
-      <section className="mx-auto max-w-[980px] px-4 py-6 sm:px-6">
+      <section className="mx-auto max-w-[880px] px-4 py-6 sm:px-6">
         <section className="surface-card overflow-hidden">
-          <div className="border-b border-stone-200/70 bg-gradient-to-b from-stone-50 to-white p-5">
+          <div className="border-b border-stone-200/70 bg-white p-4 sm:p-5">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex min-w-0 items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-stone-900 to-stone-700 text-white shadow-md ring-1 ring-black/10">
+                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-stone-900 text-white ring-1 ring-black/10">
                   <Inbox className="h-5 w-5" />
                 </div>
                 <div className="min-w-0">
-                  <h2 className="text-[15px] font-semibold tracking-tight text-stone-950">
-                    Triage queue
+                  <h2 className="text-sm font-semibold tracking-tight text-stone-950">
+                    Tickets
                   </h2>
                   <p className="text-[12.5px] text-stone-500">
                     <span className="font-semibold text-stone-700 tabular-nums">
                       {activeTickets}
                     </span>{" "}
-                    active,{" "}
-                    <span className="tabular-nums">{data.tickets.length}</span>{" "}
-                    total
+                    active ·{" "}
+                    <span className="tabular-nums">{filteredTickets.length}</span>{" "}
+                    shown
                   </p>
                 </div>
               </div>
               <div className="flex flex-wrap items-center gap-2">
-                <span className="rounded-full border border-stone-200 bg-white px-2.5 py-1 text-[11px] font-semibold tabular-nums text-stone-600 shadow-sm">
-                  {filteredTickets.length} shown
-                </span>
                 <Link
                   href="/overview"
                   className="rounded-full border border-stone-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-stone-600 shadow-sm transition hover:text-stone-950"
@@ -954,120 +918,104 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
                 </Link>
               </div>
             </div>
-            <div className="mt-4 grid gap-2 border-y border-stone-200/70 py-3 text-[12px] sm:grid-cols-4">
-              <button
-                type="button"
-                onClick={resetFilters}
-                className="rounded-lg bg-white px-3 py-2 text-left font-semibold text-stone-700 ring-1 ring-stone-200 transition hover:bg-stone-50"
-              >
-                <span className="block text-[10px] uppercase tracking-[0.08em] text-stone-400">
-                  Active
-                </span>
-                <span className="tabular-nums">{activeTickets}</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setQuery("");
-                  setPriorityFilter("P1");
-                  setStatusFilter("active");
-                  setTeamFilter("all");
-                  setShowBreachedOnly(false);
-                }}
-                className="rounded-lg bg-white px-3 py-2 text-left font-semibold text-red-700 ring-1 ring-red-100 transition hover:bg-red-50"
-              >
-                <span className="block text-[10px] uppercase tracking-[0.08em] text-red-400">
-                  P1
-                </span>
-                <span className="tabular-nums">{p1Tickets}</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setQuery("");
-                  setPriorityFilter("all");
-                  setStatusFilter("active");
-                  setTeamFilter("all");
-                  setShowBreachedOnly(true);
-                }}
-                className="rounded-lg bg-white px-3 py-2 text-left font-semibold text-amber-700 ring-1 ring-amber-100 transition hover:bg-amber-50"
-              >
-                <span className="block text-[10px] uppercase tracking-[0.08em] text-amber-500">
-                  Breaches
-                </span>
-                <span className="tabular-nums">{breachedTickets}</span>
-              </button>
-              <div className="rounded-lg bg-white px-3 py-2 font-semibold text-emerald-700 ring-1 ring-emerald-100">
-                <span className="block text-[10px] uppercase tracking-[0.08em] text-emerald-500">
-                  Avg age
-                </span>
-                <span className="tabular-nums">{avgAge ?? "0m"}</span>
-              </div>
-            </div>
             <div className="relative mt-4">
               <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-stone-400" />
               <input
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search by title, owner, team..."
+                placeholder="Search tickets"
                 className="input-field h-10 w-full min-w-0 pl-9 pr-3 text-sm text-stone-900 placeholder:text-stone-400"
               />
             </div>
-            <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_1fr_1fr_auto]">
-              <SelectField
-                labelText="Status"
-                value={statusFilter}
-                onChange={(value) => setStatusFilter(value as FilterStatus)}
-              >
-                <option value="active">Active</option>
-                <option value="all">All</option>
-                {statuses.map((status) => (
-                  <option key={status} value={status}>
-                    {label(status)}
-                  </option>
-                ))}
-              </SelectField>
-              <SelectField
-                labelText="Priority"
-                value={priorityFilter}
-                onChange={(value) => setPriorityFilter(value as "all" | Priority)}
-              >
-                <option value="all">All</option>
-                {priorities.map((priority) => (
-                  <option key={priority} value={priority}>
-                    {priority}
-                  </option>
-                ))}
-              </SelectField>
-              <SelectField labelText="Team" value={teamFilter} onChange={setTeamFilter}>
-                <option value="all">All</option>
-                {data.teams.map((team) => (
-                  <option key={team.id} value={team.id}>
-                    {team.name}
-                  </option>
-                ))}
-              </SelectField>
-              <div className="flex items-end">
+            <details className="mt-3 rounded-lg border border-stone-200 bg-stone-50/70 px-3 py-2">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-[12.5px] font-semibold text-stone-700">
+                <span className="inline-flex items-center gap-2">
+                  <SlidersHorizontal className="h-4 w-4 text-stone-500" />
+                  Filters
+                </span>
+                <span className="text-[11px] font-medium text-stone-500">
+                  {hasActiveFilters ? "Active" : "Default"}
+                </span>
+              </summary>
+              <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_1fr_1fr_auto]">
+                <SelectField
+                  labelText="Status"
+                  value={statusFilter}
+                  onChange={(value) => setStatusFilter(value as FilterStatus)}
+                >
+                  <option value="active">Active</option>
+                  <option value="all">All</option>
+                  {statuses.map((status) => (
+                    <option key={status} value={status}>
+                      {label(status)}
+                    </option>
+                  ))}
+                </SelectField>
+                <SelectField
+                  labelText="Priority"
+                  value={priorityFilter}
+                  onChange={(value) =>
+                    setPriorityFilter(value as "all" | Priority)
+                  }
+                >
+                  <option value="all">All</option>
+                  {priorities.map((priority) => (
+                    <option key={priority} value={priority}>
+                      {priority}
+                    </option>
+                  ))}
+                </SelectField>
+                <SelectField
+                  labelText="Team"
+                  value={teamFilter}
+                  onChange={setTeamFilter}
+                >
+                  <option value="all">All</option>
+                  {data.teams.map((team) => (
+                    <option key={team.id} value={team.id}>
+                      {team.name}
+                    </option>
+                  ))}
+                </SelectField>
+                <div className="flex items-end">
+                  <button
+                    type="button"
+                    onClick={resetFilters}
+                    className="btn-soft inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg px-3 text-sm font-semibold"
+                  >
+                    Reset
+                  </button>
+                </div>
+              </div>
+              <div className="mt-3 flex flex-wrap items-center gap-2">
                 <button
                   type="button"
-                  onClick={resetFilters}
-                  className="btn-soft inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg px-3 text-sm font-semibold"
+                  onClick={() => {
+                    setQuery("");
+                    setPriorityFilter("P1");
+                    setStatusFilter("active");
+                    setTeamFilter("all");
+                    setShowBreachedOnly(false);
+                  }}
+                  className="rounded-full border border-red-100 bg-white px-2.5 py-1 text-[11px] font-semibold text-red-700 transition hover:bg-red-50"
                 >
-                  <SlidersHorizontal className="h-4 w-4" />
-                  Reset
+                  P1 only
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setQuery("");
+                    setPriorityFilter("all");
+                    setStatusFilter("active");
+                    setTeamFilter("all");
+                    setShowBreachedOnly(true);
+                  }}
+                  className="rounded-full border border-amber-100 bg-white px-2.5 py-1 text-[11px] font-semibold text-amber-700 transition hover:bg-amber-50"
+                >
+                  SLA breaches ({breachedTickets})
                 </button>
               </div>
-            </div>
-            {showBreachedOnly ? (
-              <button
-                type="button"
-                onClick={() => setShowBreachedOnly(false)}
-                className="mt-3 inline-flex h-8 items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 text-xs font-semibold text-red-700"
-              >
-                <XCircle className="h-4 w-4" />
-                SLA breaches only
-              </button>
-            ) : null}
+            </details>
           </div>
           <div>
             {filteredTickets.length > 0 ? (

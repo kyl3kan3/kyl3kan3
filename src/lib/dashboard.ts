@@ -75,6 +75,7 @@ type UserRow = {
   full_name: string | null;
   role: UserOption["role"];
   team_ids: string[] | null;
+  on_call: boolean | null;
 };
 
 function toNumber(value: number | string | null | undefined) {
@@ -225,7 +226,8 @@ export async function getDashboardData(): Promise<DashboardData> {
           u.email,
           u.full_name,
           u.role,
-          coalesce(array_remove(array_agg(tm.team_id::text), null), '{}') as team_ids
+          coalesce(array_remove(array_agg(tm.team_id::text), null), '{}') as team_ids,
+          coalesce(bool_or(tm.is_on_call), false) as on_call
         from users u
         left join team_members tm on tm.user_id = u.id
         where u.is_active
@@ -341,6 +343,7 @@ export async function getDashboardData(): Promise<DashboardData> {
         fullName: user.full_name,
         role: user.role,
         teamIds: user.team_ids ?? [],
+        onCall: Boolean(user.on_call),
       })),
     };
   } catch (error) {

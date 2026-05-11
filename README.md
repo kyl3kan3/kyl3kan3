@@ -69,6 +69,25 @@ https://<your-vercel-domain>/api/webhooks/inbound-email
 
 For Resend Inbound, create a receiving domain or use the provided `.resend.app` address, add a webhook for `email.received`, and use a subdomain if the root domain already has production mailbox MX records.
 
+## Live intake and priority
+
+The production webhook is always available at:
+
+```text
+https://kyl3kan3.vercel.app/api/webhooks/inbound-email
+```
+
+There is no polling worker to keep awake. The email provider calls this URL whenever a new inbound email or alert arrives, and Vercel runs the function on demand.
+
+Priority is decided from two scores:
+
+- Importance: customer/payment/checkout/security/compliance/high-priority language.
+- Urgency: critical/P1/high-priority/immediate/urgent/asap/spike/5xx/repeat language.
+
+Those scores map to `P1` through `P4`, set the SLA due time, and feed AI assignment. When `OPENAI_API_KEY` is set, AI can refine the title, summary, priority, team, owner, and deduplication hint. When AI is missing or fails, the deterministic scorer still creates and routes the ticket.
+
+Teams and users are managed from `/settings`. Users have a role, one team assignment, and an on-call flag; inbound assignment prefers on-call users with lower active ticket load.
+
 ## Checks
 
 ```bash

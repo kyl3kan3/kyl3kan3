@@ -1,13 +1,16 @@
 import { randomUUID } from "node:crypto";
 import {
   addDemoTicketComment,
+  createDemoTeam,
   createDemoTicket,
+  createDemoUser,
   updateDemoTicket,
 } from "./demo-store";
 import { getSql, hasDatabaseUrl } from "./db";
-import type { Priority, TicketStatus } from "./types";
+import type { Priority, TicketStatus, UserRole } from "./types";
 
 const priorities: Priority[] = ["P1", "P2", "P3", "P4"];
+const roles: UserRole[] = ["reporter", "agent", "manager", "admin"];
 const statuses: TicketStatus[] = [
   "new",
   "triaged",
@@ -56,6 +59,18 @@ export type AddCommentInput = {
   authorEmail?: string | null;
 };
 
+export type CreateTeamInput = {
+  name: string;
+};
+
+export type CreateUserInput = {
+  email: string;
+  fullName?: string | null;
+  role: UserRole;
+  teamId?: string | null;
+  isOnCall: boolean;
+};
+
 function cleanString(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
@@ -68,6 +83,14 @@ function asStatus(value: unknown): TicketStatus | undefined {
   return statuses.includes(value as TicketStatus)
     ? (value as TicketStatus)
     : undefined;
+}
+
+function asRole(value: unknown): UserRole {
+  return roles.includes(value as UserRole) ? (value as UserRole) : "agent";
+}
+
+function asBoolean(value: unknown) {
+  return value === true || value === "true" || value === "on";
 }
 
 function priorityScores(priority: Priority) {
@@ -178,6 +201,80 @@ export function parseUpdateTicketInput(payload: Record<string, unknown>) {
     comment:
       payload.comment === undefined ? undefined : cleanString(payload.comment),
   } satisfies UpdateTicketInput;
+}
+
+export function parseCreateTeamInput(payload: Record<string, unknown>) {
+  const name = cleanString(payload.name);
+
+  if (!name) {
+    throw new Error("A team name is required");
+  }
+
+  return { name } satisfies CreateTeamInput;
+}
+
+export function parseCreateUserInput(payload: Record<string, unknown>) {
+  const email = cleanString(payload.email).toLowerCase();
+
+  if (!email || !email.includes("@")) {
+    throw new Error("A valid email is required");
+  }
+
+  return {
+    email,
+    fullName: cleanString(payload.fullName) || null,
+    role: asRole(payload.role),
+    teamId: cleanString(payload.teamId) || null,
+    isOnCall: asBoolean(payload.isOnCall),
+  } satisfies CreateUserInput;
+}
+
+export async function createTeam(input: CreateTeamInput) {
+  if (!hasDatabaseUrl()) {
+    return createDemoTeam(input);
+  }
+
+  const sql = getSql();
+  const orgId = await ensureDefaultOrg();
+  const rows = (await sql`
+    insert into teams (org_id, name)
+    values (${orgId}, ${input.name})
+    on conflict (org_id, name) do update set name = excluded.name
+    returning id
+  `) as IdRow[];
+
+  return rows[0];
+}
+
+export async function createUser(input: CreateUserInput) {
+  if (!hasDatabaseUrl()) {
+    return createDemoUser(input);
+  }
+
+  const sql = getSql();
+  const orgId = await ensureDefaultOrg();
+  const rows = (await sql`
+    insert into users (org_id, email, full_name, role, is_active)
+    values (${orgId}, ${input.email}, ${input.fullName ?? null}, ${input.role}, true)
+    on conflict (org_id, email) do update
+      set full_name = excluded.full_name,
+          role = excluded.role,
+          is_active = true
+    returning id
+  `) as IdRow[];
+  const userId = rows[0].id;
+
+  await sql`delete from team_members where user_id = ${userId}`;
+
+  if (input.teamId) {
+    await sql`
+      insert into team_members (team_id, user_id, is_on_call)
+      values (${input.teamId}, ${userId}, ${input.isOnCall})
+      on conflict (team_id, user_id) do update set is_on_call = excluded.is_on_call
+    `;
+  }
+
+  return { id: userId };
 }
 
 export async function createTicket(input: CreateTicketInput) {

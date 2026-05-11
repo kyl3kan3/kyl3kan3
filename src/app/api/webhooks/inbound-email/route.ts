@@ -339,7 +339,7 @@ function demoAssignmentContext(): AssignmentContext {
         email: user.email,
         fullName: user.fullName,
         teamIds: user.teamIds,
-        isOnCall: true,
+        isOnCall: user.onCall,
         openTickets,
       };
     }),

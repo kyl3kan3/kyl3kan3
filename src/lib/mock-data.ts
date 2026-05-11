@@ -195,6 +195,7 @@ export function getMockDashboardData(dbError?: string): DashboardData {
         fullName: "Maya Chen",
         role: "manager",
         teamIds: ["demo-team-1"],
+        onCall: true,
       },
       {
         id: "demo-user-2",
@@ -202,6 +203,7 @@ export function getMockDashboardData(dbError?: string): DashboardData {
         fullName: "Owen Patel",
         role: "agent",
         teamIds: ["demo-team-2"],
+        onCall: true,
       },
       {
         id: "demo-user-3",
@@ -209,6 +211,7 @@ export function getMockDashboardData(dbError?: string): DashboardData {
         fullName: "Riley Gomez",
         role: "agent",
         teamIds: ["demo-team-3"],
+        onCall: true,
       },
       {
         id: "demo-user-4",
@@ -216,6 +219,7 @@ export function getMockDashboardData(dbError?: string): DashboardData {
         fullName: "Sam Rivera",
         role: "agent",
         teamIds: ["demo-team-4"],
+        onCall: true,
       },
     ],
   };

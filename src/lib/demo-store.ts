@@ -9,7 +9,9 @@ import type {
 } from "./types";
 import type {
   AddCommentInput,
+  CreateTeamInput,
   CreateTicketInput,
+  CreateUserInput,
   UpdateTicketInput,
 } from "./operations";
 
@@ -182,8 +184,71 @@ function deriveDashboard(data: DashboardData, dbError?: string): DashboardData {
   };
 }
 
+function updateDemoTeamCounts(data: DashboardData) {
+  for (const team of data.teams) {
+    const teamUsers = data.users.filter((item) => item.teamIds.includes(team.id));
+    team.members = teamUsers.length;
+    team.onCall = teamUsers.filter((item) => item.onCall).length;
+  }
+}
+
 export function getDemoDashboardData(dbError?: string) {
   return deriveDashboard(ensureDemoState(), dbError);
+}
+
+export async function createDemoTeam(input: CreateTeamInput) {
+  const data = ensureDemoState();
+  const existing = data.teams.find(
+    (team) => team.name.toLowerCase() === input.name.toLowerCase(),
+  );
+
+  if (existing) return { id: existing.id };
+
+  const team = {
+    id: `demo-team-${randomUUID()}`,
+    name: input.name,
+    members: 0,
+    onCall: 0,
+  };
+  data.teams.push(team);
+  data.teamLoad.push({
+    team: team.name,
+    openTickets: 0,
+    urgentTickets: 0,
+    members: 0,
+  });
+
+  return { id: team.id };
+}
+
+export async function createDemoUser(input: CreateUserInput) {
+  const data = ensureDemoState();
+  const existing = data.users.find(
+    (user) => user.email.toLowerCase() === input.email.toLowerCase(),
+  );
+  const teamIds = input.teamId ? [input.teamId] : [];
+
+  if (existing) {
+    existing.fullName = input.fullName ?? existing.fullName;
+    existing.role = input.role;
+    existing.teamIds = teamIds;
+    existing.onCall = input.isOnCall;
+    updateDemoTeamCounts(data);
+    return { id: existing.id };
+  }
+
+  const user = {
+    id: `demo-user-${randomUUID()}`,
+    email: input.email,
+    fullName: input.fullName ?? null,
+    role: input.role,
+    teamIds,
+    onCall: input.isOnCall,
+  };
+  data.users.push(user);
+  updateDemoTeamCounts(data);
+
+  return { id: user.id };
 }
 
 export async function createDemoTicket(input: CreateTicketInput) {

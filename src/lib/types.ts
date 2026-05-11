@@ -76,12 +76,15 @@ export type TeamOption = {
   onCall: number;
 };
 
+export type UserRole = "reporter" | "agent" | "manager" | "admin";
+
 export type UserOption = {
   id: string;
   email: string;
   fullName: string | null;
-  role: "reporter" | "agent" | "manager" | "admin";
+  role: UserRole;
   teamIds: string[];
+  onCall: boolean;
 };
 
 export type DashboardData = {

@@ -14,6 +14,8 @@ import {
   ShieldCheck,
   SlidersHorizontal,
   Sparkles,
+  UserPlus,
+  Users,
   X,
 } from "lucide-react";
 import Link from "next/link";
@@ -27,6 +29,7 @@ import type {
   TicketQueueItem,
   TicketStatus,
   UserOption,
+  UserRole,
 } from "@/lib/types";
 
 type FilterStatus = "active" | "all" | TicketStatus;
@@ -50,6 +53,7 @@ const statuses: TicketStatus[] = [
   "resolved",
   "closed",
 ];
+const roles: UserRole[] = ["agent", "manager", "admin", "reporter"];
 
 const emptyDraft: DraftTicket = {
   title: "",
@@ -1245,11 +1249,20 @@ const exampleProviders = [
   },
 ];
 
-export function SettingsConsole() {
+export function SettingsConsole({ initialData }: { initialData: DashboardData }) {
   const [integrationTest, setIntegrationTest] = useState({
     webhookUrl: "",
     apiKey: "",
     subject: "Integration smoke alert",
+  });
+  const [directoryData, setDirectoryData] = useState(initialData);
+  const [teamDraft, setTeamDraft] = useState({ name: "" });
+  const [userDraft, setUserDraft] = useState({
+    email: "",
+    fullName: "",
+    role: "agent" as UserRole,
+    teamId: initialData.teams[0]?.id ?? "",
+    isOnCall: true,
   });
   const [exampleId, setExampleId] = useState(exampleProviders[0].id);
   const [notice, setNotice] = useState<string | null>(null);
@@ -1312,9 +1325,60 @@ export function SettingsConsole() {
       : "Webhook test accepted";
   }
 
+  async function refreshDirectory() {
+    const response = await fetch("/api/dashboard", { cache: "no-store" });
+    if (!response.ok) throw new Error("Unable to refresh people");
+    const result = (await response.json()) as DashboardData;
+    setDirectoryData(result);
+    setUserDraft((next) => ({
+      ...next,
+      teamId: next.teamId || result.teams[0]?.id || "",
+    }));
+  }
+
+  async function createTeamFromDraft() {
+    const response = await fetch("/api/teams", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(teamDraft),
+    });
+    const result = (await response.json()) as { ok?: boolean; error?: string };
+    if (!response.ok || !result.ok) {
+      throw new Error(result.error ?? "Unable to create team");
+    }
+    setTeamDraft({ name: "" });
+    await refreshDirectory();
+    return "Team saved";
+  }
+
+  async function createUserFromDraft() {
+    const response = await fetch("/api/users", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(userDraft),
+    });
+    const result = (await response.json()) as { ok?: boolean; error?: string };
+    if (!response.ok || !result.ok) {
+      throw new Error(result.error ?? "Unable to create user");
+    }
+    setUserDraft((next) => ({ ...next, email: "", fullName: "" }));
+    await refreshDirectory();
+    return "User saved";
+  }
+
   function submitIntegrationTest(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     runMutation(testIntegration);
+  }
+
+  function submitTeam(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    runMutation(createTeamFromDraft);
+  }
+
+  function submitUser(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    runMutation(createUserFromDraft);
   }
 
   function copyWebhookUrl() {
@@ -1369,6 +1433,86 @@ export function SettingsConsole() {
               Send test request
             </button>
           </form>
+        </SetupCard>
+
+        <SetupCard icon={<Users className="h-5 w-5" />} title="Teams and people" helper="Route alerts to the right team and on-call owner.">
+          <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
+            <div className="grid gap-3">
+              <form onSubmit={submitTeam} className="grid gap-3">
+                <TextField labelText="Team name" value={teamDraft.name} onChange={(value) => setTeamDraft({ name: value })} placeholder="Billing" />
+                <button type="submit" disabled={isPending || !teamDraft.name.trim()} className="btn-soft inline-flex h-11 items-center justify-center gap-2 rounded-full px-4 text-sm font-bold disabled:opacity-60">
+                  <UserPlus className="h-4 w-4" />
+                  Add team
+                </button>
+              </form>
+              <div className="grid gap-2">
+                {directoryData.teams.map((team) => (
+                  <div key={team.id} className="rounded-2xl border border-[#e7dfd2] bg-[#fbfaf7] px-3 py-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-sm font-bold text-[#1f2937]">{team.name}</p>
+                      <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-bold text-[#737064] ring-1 ring-[#e7dfd2]">
+                        {team.onCall}/{team.members} on call
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <form onSubmit={submitUser} className="grid gap-3">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <TextField labelText="Email" type="email" value={userDraft.email} onChange={(value) => setUserDraft((next) => ({ ...next, email: value }))} placeholder="teammate@decent4.com" />
+                <TextField labelText="Name" value={userDraft.fullName} onChange={(value) => setUserDraft((next) => ({ ...next, fullName: value }))} placeholder="Teammate name" />
+                <SelectField labelText="Role" value={userDraft.role} onChange={(value) => setUserDraft((next) => ({ ...next, role: value as UserRole }))}>
+                  {roles.map((role) => (
+                    <option key={role} value={role}>{label(role)}</option>
+                  ))}
+                </SelectField>
+                <SelectField labelText="Team" value={userDraft.teamId} onChange={(value) => setUserDraft((next) => ({ ...next, teamId: value }))}>
+                  <option value="">No team</option>
+                  {directoryData.teams.map((team) => (
+                    <option key={team.id} value={team.id}>{team.name}</option>
+                  ))}
+                </SelectField>
+              </div>
+              <label className="flex items-center gap-2 rounded-2xl border border-[#e7dfd2] bg-[#fbfaf7] px-3 py-3 text-sm font-bold text-[#1f2937]">
+                <input
+                  type="checkbox"
+                  checked={userDraft.isOnCall}
+                  onChange={(event) => setUserDraft((next) => ({ ...next, isOnCall: event.target.checked }))}
+                  className="h-4 w-4 accent-[#1f6f61]"
+                />
+                On call
+              </label>
+              <button type="submit" disabled={isPending || !userDraft.email.trim()} className="btn-primary inline-flex h-11 items-center justify-center gap-2 rounded-full px-4 text-sm font-bold disabled:opacity-60">
+                <UserPlus className="h-4 w-4" />
+                Add user
+              </button>
+              <div className="grid gap-2">
+                {directoryData.users.map((user) => {
+                  const teamNames = user.teamIds
+                    .map((teamId) => directoryData.teams.find((team) => team.id === teamId)?.name)
+                    .filter(Boolean)
+                    .join(", ");
+                  return (
+                    <div key={user.id} className="rounded-2xl border border-[#e7dfd2] bg-white px-3 py-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                          <p className="text-sm font-bold text-[#1f2937]">{user.fullName ?? user.email}</p>
+                          <p className="mt-0.5 text-[12px] font-medium text-[#737064]">{user.email}</p>
+                        </div>
+                        <div className="flex flex-wrap gap-1.5">
+                          <span className="rounded-full bg-[#f7f5f0] px-2.5 py-1 text-[11px] font-bold text-[#737064] ring-1 ring-[#e7dfd2]">{label(user.role)}</span>
+                          {user.onCall ? <span className="rounded-full bg-[#e8f7f3] px-2.5 py-1 text-[11px] font-bold text-[#1f6f61] ring-1 ring-[#c7eee4]">On call</span> : null}
+                        </div>
+                      </div>
+                      <p className="mt-2 text-[12px] font-semibold text-[#737064]">{teamNames || "No team"}</p>
+                    </div>
+                  );
+                })}
+              </div>
+            </form>
+          </div>
         </SetupCard>
 
         <SetupCard icon={<AlertTriangle className="h-5 w-5" />} title="Example messages" helper="Use a sample payload when checking a provider sandbox.">

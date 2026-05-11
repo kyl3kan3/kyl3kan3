@@ -64,13 +64,13 @@ const priorityRail: Record<Priority, string> = {
 };
 
 const statusTone: Record<TicketStatus, string> = {
-  new: "bg-fuchsia-50 text-fuchsia-700 ring-1 ring-fuchsia-200/80",
-  triaged: "bg-sky-50 text-sky-700 ring-1 ring-sky-200/80",
-  assigned: "bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200/80",
-  in_progress: "bg-amber-50 text-amber-800 ring-1 ring-amber-200/80",
-  waiting: "bg-stone-100 text-stone-700 ring-1 ring-stone-200/80",
-  resolved: "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200/80",
-  closed: "bg-stone-100 text-stone-500 ring-1 ring-stone-200/80",
+  new: "bg-white text-slate-700 ring-1 ring-slate-200",
+  triaged: "bg-blue-50 text-blue-700 ring-1 ring-blue-100",
+  assigned: "bg-white text-slate-700 ring-1 ring-slate-200",
+  in_progress: "bg-amber-50 text-amber-800 ring-1 ring-amber-100",
+  waiting: "bg-white text-slate-600 ring-1 ring-slate-200",
+  resolved: "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100",
+  closed: "bg-slate-100 text-slate-500 ring-1 ring-slate-200",
 };
 
 const metricIcons: Record<OpsMetric["key"], typeof RadioTower> = {
@@ -85,28 +85,28 @@ const metricAccent: Record<
   { ring: string; glow: string; icon: string; label: string }
 > = {
   openTickets: {
-    ring: "ring-sky-200/70",
-    glow: "from-sky-100 via-white to-white",
-    icon: "bg-gradient-to-br from-sky-500 to-sky-700 text-white",
-    label: "text-sky-700",
+    ring: "ring-slate-200",
+    glow: "from-white via-white to-white",
+    icon: "bg-blue-600 text-white",
+    label: "text-slate-500",
   },
   p1Incidents: {
-    ring: "ring-red-200/70",
-    glow: "from-red-100 via-white to-white",
-    icon: "bg-gradient-to-br from-red-500 to-red-700 text-white",
-    label: "text-red-700",
+    ring: "ring-slate-200",
+    glow: "from-white via-white to-white",
+    icon: "bg-red-600 text-white",
+    label: "text-slate-500",
   },
   slaBreaches: {
-    ring: "ring-amber-200/70",
-    glow: "from-amber-100 via-white to-white",
-    icon: "bg-gradient-to-br from-amber-400 to-amber-600 text-white",
-    label: "text-amber-700",
+    ring: "ring-slate-200",
+    glow: "from-white via-white to-white",
+    icon: "bg-amber-500 text-white",
+    label: "text-slate-500",
   },
   avgAge: {
-    ring: "ring-emerald-200/70",
-    glow: "from-emerald-100 via-white to-white",
-    icon: "bg-gradient-to-br from-emerald-500 to-emerald-700 text-white",
-    label: "text-emerald-700",
+    ring: "ring-slate-200",
+    glow: "from-white via-white to-white",
+    icon: "bg-slate-700 text-white",
+    label: "text-slate-500",
   },
 };
 
@@ -195,13 +195,13 @@ function SelectField({
   disabled?: boolean;
 }) {
   return (
-    <label className="grid min-w-0 gap-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-stone-500">
+    <label className="grid min-w-0 gap-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">
       {labelText}
       <select
         value={value}
         disabled={disabled}
         onChange={(event) => onChange(event.target.value)}
-        className="input-field h-10 w-full min-w-0 px-3 text-sm font-medium normal-case tracking-normal text-stone-900 disabled:cursor-not-allowed disabled:bg-stone-50 disabled:text-stone-400"
+        className="input-field h-10 w-full min-w-0 px-3 text-sm font-medium normal-case tracking-normal text-slate-900 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400"
       >
         {children}
       </select>
@@ -225,7 +225,7 @@ function TextField({
   type?: "email" | "password" | "text" | "url";
 }) {
   return (
-    <label className="grid min-w-0 gap-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-stone-500">
+    <label className="grid min-w-0 gap-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">
       {labelText}
       <input
         type={type}
@@ -233,7 +233,7 @@ function TextField({
         value={value}
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
-        className="input-field h-10 w-full min-w-0 px-3 text-sm normal-case tracking-normal text-stone-900 placeholder:text-stone-400"
+        className="input-field h-10 w-full min-w-0 px-3 text-sm normal-case tracking-normal text-slate-900 placeholder:text-slate-400"
       />
     </label>
   );
@@ -267,27 +267,27 @@ function AppHeader({
   ];
 
   return (
-    <header className="glass-header sticky top-0 z-20 border-b border-stone-200/70">
-      <div className="mx-auto flex max-w-[1240px] flex-col gap-4 px-4 py-4 sm:px-6 xl:flex-row xl:items-center xl:justify-between">
-        <div className="flex min-w-0 items-center gap-4">
+    <header className="glass-header sticky top-0 z-20 border-b border-slate-200">
+      <div className="mx-auto flex max-w-[1180px] flex-col gap-3 px-4 py-3 sm:px-6 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex min-w-0 items-center gap-3">
           <Link
             href="/"
-            className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-stone-900 to-stone-700 text-white shadow-md ring-1 ring-black/10"
+            className="flex h-9 w-9 items-center justify-center rounded-md bg-blue-600 text-white"
             aria-label="Open queue"
           >
-            <Bell className="h-5 w-5" />
+            <Bell className="h-4 w-4" />
           </Link>
           <div className="min-w-0">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-stone-500">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
               {subtitle}
             </p>
-            <h1 className="truncate text-[22px] font-semibold tracking-tight text-stone-950 sm:text-[26px]">
+            <h1 className="truncate text-xl font-semibold tracking-tight text-slate-950">
               {title}
             </h1>
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <nav className="flex rounded-full border border-stone-200 bg-white/70 p-1 shadow-sm backdrop-blur">
+          <nav className="flex rounded-md border border-slate-200 bg-white p-0.5">
             {links.map((link) => {
               const Icon = link.icon;
               const isActiveLink = active === link.key;
@@ -295,13 +295,13 @@ function AppHeader({
                 <Link
                   key={link.href}
                   href={link.href}
-                  className={`inline-flex h-9 items-center justify-center gap-2 rounded-full px-3 text-[12.5px] font-semibold transition ${
+                  className={`inline-flex h-8 items-center justify-center gap-2 rounded px-3 text-[12.5px] font-semibold transition ${
                     isActiveLink
-                      ? "bg-stone-900 text-white shadow-sm"
-                      : "text-stone-600 hover:bg-white hover:text-stone-950"
+                      ? "bg-slate-900 text-white"
+                      : "text-slate-600 hover:bg-slate-50 hover:text-slate-950"
                   }`}
                 >
-                  <Icon className="h-4 w-4" />
+                  <Icon className="h-3.5 w-3.5" />
                   {link.label}
                 </Link>
               );
@@ -318,7 +318,7 @@ function Notice({ message }: { message: string | null }) {
   if (!message) return null;
 
   return (
-    <div className="fixed bottom-5 left-1/2 z-50 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 rounded-2xl border border-stone-200 bg-white/95 px-4 py-3 text-sm font-semibold text-stone-800 shadow-[0_24px_48px_-24px_rgba(20,14,5,0.45)] backdrop-blur">
+    <div className="fixed bottom-5 left-1/2 z-50 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-800 shadow-lg">
       <div className="flex items-center gap-2">
         <span className="h-2 w-2 rounded-full bg-emerald-500 ring-pulse" />
         {message}
@@ -341,7 +341,7 @@ function HealthButton({
       type="button"
       onClick={onClick}
       disabled={isPending}
-      className={`inline-flex h-10 items-center justify-center gap-2 rounded-full border px-3.5 text-[12.5px] font-semibold disabled:opacity-60 ${
+      className={`inline-flex h-9 items-center justify-center gap-2 rounded-md border px-3 text-[12.5px] font-semibold disabled:opacity-60 ${
         isLive
           ? "border-emerald-200 bg-emerald-50 text-emerald-800"
           : "border-amber-200 bg-amber-50 text-amber-800"
@@ -353,7 +353,7 @@ function HealthButton({
         }`}
       />
       <ShieldCheck className="h-4 w-4" />
-      {isLive ? "Neon live" : "Demo data"}
+      {isLive ? "Live" : "Demo"}
     </button>
   );
 }
@@ -376,33 +376,28 @@ function MetricCard({
       type={onActivate ? "button" : undefined}
       onClick={onActivate}
       aria-pressed={onActivate ? active : undefined}
-      className={`surface-card group relative overflow-hidden p-5 text-left transition duration-300 ring-1 ${accent.ring} ${
-        onActivate
-          ? "hover:-translate-y-0.5 hover:shadow-[0_18px_40px_-22px_rgba(20,14,5,0.35)]"
-          : ""
-      } ${active ? "outline outline-2 outline-offset-2 outline-stone-950" : ""}`}
+      className={`surface-card p-4 text-left ring-1 ${accent.ring} ${
+        onActivate ? "transition hover:border-slate-300" : ""
+      } ${active ? "outline outline-2 outline-offset-2 outline-blue-600" : ""}`}
     >
-      <div
-        className={`pointer-events-none absolute -right-12 -top-12 h-40 w-40 rounded-full bg-gradient-to-br ${accent.glow} opacity-70 blur-2xl transition duration-500 group-hover:opacity-90`}
-      />
-      <div className="relative flex items-start justify-between gap-3">
+      <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p
-            className={`text-[11px] font-semibold uppercase tracking-[0.1em] ${accent.label}`}
+            className={`text-[11px] font-semibold uppercase tracking-[0.08em] ${accent.label}`}
           >
             {metric.label}
           </p>
-          <p className="mt-3 text-4xl font-semibold tracking-tight text-stone-950 tabular-nums">
+          <p className="mt-2 text-3xl font-semibold tracking-tight text-slate-950 tabular-nums">
             {metric.value}
           </p>
         </div>
         <div
-          className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl shadow-md ring-1 ring-black/5 ${accent.icon}`}
+          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-md ${accent.icon}`}
         >
           <Icon className="h-5 w-5" />
         </div>
       </div>
-      <p className="relative mt-4 border-t border-stone-200/70 pt-3 text-sm leading-5 text-stone-500">
+      <p className="mt-3 border-t border-slate-200 pt-3 text-sm leading-5 text-slate-500">
         {metric.detail}
       </p>
     </Tag>
@@ -421,46 +416,46 @@ function TicketListItem({
   return (
     <Link
       href={`/tickets/${ticket.id}`}
-      className="relative block w-full border-b border-stone-200/70 bg-white px-4 py-3 text-left transition-colors duration-200 last:border-b-0 hover:bg-stone-50/60 sm:px-5"
+      className="relative block w-full border-b border-slate-200 bg-white px-4 py-3 text-left transition-colors last:border-b-0 hover:bg-slate-50 sm:px-5"
     >
       <span
-        className={`absolute bottom-3 left-0 top-3 w-[3px] rounded-r-full ${priorityRail[ticket.priority]} opacity-80`}
+        className={`absolute bottom-3 left-0 top-3 w-[3px] rounded-r-full ${priorityRail[ticket.priority]}`}
       />
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="mb-2 flex flex-wrap items-center gap-1.5">
             <span
-              className={`inline-flex h-6 items-center gap-1 rounded-md px-2 text-[11px] font-semibold ${priorityClass[ticket.priority]}`}
+              className={`inline-flex h-6 items-center gap-1 rounded px-2 text-[11px] font-semibold ${priorityClass[ticket.priority]}`}
             >
               {priorityIcon(ticket.priority)}
               {ticket.priority}
             </span>
             <span
-              className={`inline-flex h-6 items-center rounded-md px-2 text-[11px] font-semibold capitalize ${statusTone[ticket.status]}`}
+              className={`inline-flex h-6 items-center rounded px-2 text-[11px] font-semibold capitalize ${statusTone[ticket.status]}`}
             >
               {label(ticket.status)}
             </span>
             {isBreached ? (
-              <span className="inline-flex h-6 items-center gap-1 rounded-md bg-red-50 px-2 text-[11px] font-semibold text-red-700 ring-1 ring-red-200/80">
+              <span className="inline-flex h-6 items-center gap-1 rounded bg-red-50 px-2 text-[11px] font-semibold text-red-700 ring-1 ring-red-100">
                 <Clock3 className="h-3 w-3" />
                 breach
               </span>
             ) : null}
           </div>
-          <h2 className="line-clamp-2 text-[13.5px] font-semibold leading-5 text-stone-900">
+          <h2 className="line-clamp-2 text-[13.5px] font-semibold leading-5 text-slate-950">
             {ticket.title}
           </h2>
         </div>
-        <span className="shrink-0 rounded-md bg-stone-900 px-2 py-1 font-mono text-[10px] font-semibold tracking-wide text-stone-50">
+        <span className="shrink-0 rounded bg-slate-100 px-2 py-1 font-mono text-[10px] font-semibold tracking-wide text-slate-600">
           TK-{ticket.ticketNumber}
         </span>
       </div>
-      <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-stone-500">
+      <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-slate-500">
         <span className="truncate">{ticket.team}</span>
         <span className="truncate">{ticket.assignee}</span>
         <span
           className={`font-semibold tabular-nums ${
-            isBreached ? "text-red-700" : "text-stone-600"
+            isBreached ? "text-red-700" : "text-slate-600"
           }`}
         >
           {ticket.slaDueAt ? formatDateTime(ticket.slaDueAt) : "No SLA"}
@@ -473,13 +468,13 @@ function TicketListItem({
 function EmptyState() {
   return (
     <div className="px-5 py-16 text-center">
-      <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-stone-100 to-stone-200 ring-1 ring-stone-200">
-        <Search className="h-5 w-5 text-stone-500" />
+      <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-md bg-slate-100 ring-1 ring-slate-200">
+        <Search className="h-5 w-5 text-slate-500" />
       </div>
-      <p className="mt-4 text-sm font-semibold text-stone-900">
+      <p className="mt-4 text-sm font-semibold text-slate-900">
         No tickets match
       </p>
-      <p className="mt-1 text-sm text-stone-500">
+      <p className="mt-1 text-sm text-slate-500">
         Adjust filters or create one manually.
       </p>
     </div>
@@ -542,7 +537,7 @@ function NewTicketModal({
       role="dialog"
       aria-modal="true"
       aria-labelledby="new-ticket-title"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-stone-950/40 p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4 backdrop-blur-sm"
       onClick={resetAndClose}
     >
       <div
@@ -553,17 +548,17 @@ function NewTicketModal({
           <div>
             <h2
               id="new-ticket-title"
-              className="text-[15px] font-semibold tracking-tight text-stone-950"
+              className="text-[15px] font-semibold tracking-tight text-slate-950"
             >
               New ticket
             </h2>
-            <p className="text-[12.5px] text-stone-500">Create a live ticket</p>
+            <p className="text-[12.5px] text-slate-500">Create a live ticket</p>
           </div>
           <button
             type="button"
             onClick={resetAndClose}
             aria-label="Close"
-            className="flex h-8 w-8 items-center justify-center rounded-lg text-stone-500 transition hover:bg-stone-100 hover:text-stone-900"
+            className="flex h-8 w-8 items-center justify-center rounded-md text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"
           >
             <X className="h-4 w-4" />
           </button>
@@ -576,7 +571,7 @@ function NewTicketModal({
             onChange={(value) => setDraft((next) => ({ ...next, title: value }))}
             placeholder="Short incident title"
           />
-          <label className="grid min-w-0 gap-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-stone-500">
+          <label className="grid min-w-0 gap-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">
             Description
             <textarea
               value={draft.description}
@@ -588,7 +583,7 @@ function NewTicketModal({
               }
               rows={4}
               placeholder="What happened?"
-              className="input-field w-full min-w-0 resize-none px-3 py-2.5 text-sm normal-case tracking-normal text-stone-900 placeholder:text-stone-400"
+              className="input-field w-full min-w-0 resize-none px-3 py-2.5 text-sm normal-case tracking-normal text-slate-900 placeholder:text-slate-400"
             />
           </label>
           <div className="grid grid-cols-2 gap-3">
@@ -650,14 +645,14 @@ function NewTicketModal({
             <button
               type="button"
               onClick={resetAndClose}
-              className="btn-soft inline-flex h-11 items-center justify-center gap-2 rounded-xl px-3 text-sm font-semibold"
+              className="btn-soft inline-flex h-11 items-center justify-center gap-2 rounded-md px-3 text-sm font-semibold"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={!draft.title.trim() || isPending || !canMutate}
-              className="btn-primary inline-flex h-11 items-center justify-center gap-2 rounded-xl px-3 text-sm font-semibold disabled:opacity-60"
+              className="btn-primary inline-flex h-11 items-center justify-center gap-2 rounded-md px-3 text-sm font-semibold disabled:opacity-60"
             >
               <Send className="h-4 w-4" />
               Create ticket
@@ -855,7 +850,7 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
     showBreachedOnly;
 
   return (
-    <main className="min-h-screen overflow-x-hidden text-stone-900">
+    <main className="min-h-screen overflow-x-hidden text-slate-900">
       <AppHeader
         title="Inbox"
         active="queue"
@@ -865,7 +860,7 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
               type="button"
               onClick={() => setIsNewTicketOpen(true)}
               disabled={!canMutate}
-              className="btn-soft inline-flex h-10 items-center justify-center gap-2 rounded-full px-4 text-[12.5px] font-semibold disabled:opacity-60"
+              className="btn-soft inline-flex h-9 items-center justify-center gap-2 rounded-md px-3 text-[12.5px] font-semibold disabled:opacity-60"
             >
               <Plus className="h-4 w-4" />
               New ticket
@@ -876,7 +871,7 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
                 runMutation(() => refresh().then(() => "Refreshed"))
               }
               disabled={isPending}
-              className="btn-primary inline-flex h-10 items-center justify-center gap-2 rounded-full px-4 text-[12.5px] font-semibold disabled:opacity-60"
+              className="btn-primary inline-flex h-9 items-center justify-center gap-2 rounded-md px-3 text-[12.5px] font-semibold disabled:opacity-60"
             >
               <RotateCcw
                 className={`h-4 w-4 ${isPending ? "animate-spin" : ""}`}
@@ -887,20 +882,20 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
         }
       />
 
-      <section className="mx-auto max-w-[880px] px-4 py-6 sm:px-6">
+      <section className="mx-auto max-w-[900px] px-4 py-6 sm:px-6">
         <section className="surface-card overflow-hidden">
-          <div className="border-b border-stone-200/70 bg-white p-4 sm:p-5">
+          <div className="border-b border-slate-200 bg-white p-4 sm:p-5">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex min-w-0 items-center gap-3">
-                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-stone-900 text-white ring-1 ring-black/10">
+                <div className="flex h-9 w-9 items-center justify-center rounded-md bg-blue-50 text-blue-700 ring-1 ring-blue-100">
                   <Inbox className="h-5 w-5" />
                 </div>
                 <div className="min-w-0">
-                  <h2 className="text-sm font-semibold tracking-tight text-stone-950">
+                  <h2 className="text-sm font-semibold tracking-tight text-slate-950">
                     Tickets
                   </h2>
-                  <p className="text-[12.5px] text-stone-500">
-                    <span className="font-semibold text-stone-700 tabular-nums">
+                  <p className="text-[12.5px] text-slate-500">
+                    <span className="font-semibold text-slate-700 tabular-nums">
                       {activeTickets}
                     </span>{" "}
                     active ·{" "}
@@ -912,28 +907,28 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
               <div className="flex flex-wrap items-center gap-2">
                 <Link
                   href="/overview"
-                  className="rounded-full border border-stone-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-stone-600 shadow-sm transition hover:text-stone-950"
+                  className="rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600 transition hover:bg-slate-50 hover:text-slate-950"
                 >
                   Overview
                 </Link>
               </div>
             </div>
             <div className="relative mt-4">
-              <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-stone-400" />
+              <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-slate-400" />
               <input
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 placeholder="Search tickets"
-                className="input-field h-10 w-full min-w-0 pl-9 pr-3 text-sm text-stone-900 placeholder:text-stone-400"
+                className="input-field h-10 w-full min-w-0 pl-9 pr-3 text-sm text-slate-900 placeholder:text-slate-400"
               />
             </div>
-            <details className="mt-3 rounded-lg border border-stone-200 bg-stone-50/70 px-3 py-2">
-              <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-[12.5px] font-semibold text-stone-700">
+            <details className="mt-3 rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-[12.5px] font-semibold text-slate-700">
                 <span className="inline-flex items-center gap-2">
-                  <SlidersHorizontal className="h-4 w-4 text-stone-500" />
+                  <SlidersHorizontal className="h-4 w-4 text-slate-500" />
                   Filters
                 </span>
-                <span className="text-[11px] font-medium text-stone-500">
+                <span className="text-[11px] font-medium text-slate-500">
                   {hasActiveFilters ? "Active" : "Default"}
                 </span>
               </summary>
@@ -981,7 +976,7 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
                   <button
                     type="button"
                     onClick={resetFilters}
-                    className="btn-soft inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg px-3 text-sm font-semibold"
+                    className="btn-soft inline-flex h-10 w-full items-center justify-center gap-2 rounded-md px-3 text-sm font-semibold"
                   >
                     Reset
                   </button>
@@ -997,7 +992,7 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
                     setTeamFilter("all");
                     setShowBreachedOnly(false);
                   }}
-                  className="rounded-full border border-red-100 bg-white px-2.5 py-1 text-[11px] font-semibold text-red-700 transition hover:bg-red-50"
+                  className="rounded-md border border-red-100 bg-white px-2.5 py-1 text-[11px] font-semibold text-red-700 transition hover:bg-red-50"
                 >
                   P1 only
                 </button>
@@ -1010,7 +1005,7 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
                     setTeamFilter("all");
                     setShowBreachedOnly(true);
                   }}
-                  className="rounded-full border border-amber-100 bg-white px-2.5 py-1 text-[11px] font-semibold text-amber-700 transition hover:bg-amber-50"
+                  className="rounded-md border border-amber-100 bg-white px-2.5 py-1 text-[11px] font-semibold text-amber-700 transition hover:bg-amber-50"
                 >
                   SLA breaches ({breachedTickets})
                 </button>
@@ -1080,7 +1075,7 @@ export function TicketDetailConsole({
   }
 
   return (
-    <main className="min-h-screen overflow-x-hidden text-stone-900">
+    <main className="min-h-screen overflow-x-hidden text-slate-900">
       <AppHeader
         title={ticket ? `TK-${ticket.ticketNumber}` : "Ticket not found"}
         active="queue"
@@ -1093,7 +1088,7 @@ export function TicketDetailConsole({
             />
             <Link
               href="/"
-              className="btn-soft inline-flex h-10 items-center justify-center gap-2 rounded-full px-4 text-[12.5px] font-semibold"
+              className="btn-soft inline-flex h-9 items-center justify-center gap-2 rounded-md px-3 text-[12.5px] font-semibold"
             >
               <ArrowLeft className="h-4 w-4" />
               Queue
@@ -1104,7 +1099,7 @@ export function TicketDetailConsole({
                 runMutation(() => refresh().then(() => "Refreshed"))
               }
               disabled={isPending}
-              className="btn-primary inline-flex h-10 items-center justify-center gap-2 rounded-full px-4 text-[12.5px] font-semibold disabled:opacity-60"
+              className="btn-primary inline-flex h-9 items-center justify-center gap-2 rounded-md px-3 text-[12.5px] font-semibold disabled:opacity-60"
             >
               <RotateCcw
                 className={`h-4 w-4 ${isPending ? "animate-spin" : ""}`}
@@ -1115,40 +1110,38 @@ export function TicketDetailConsole({
         }
       />
 
-      <section className="mx-auto max-w-[1120px] px-4 py-6 sm:px-6">
+      <section className="mx-auto max-w-[1040px] px-4 py-6 sm:px-6">
         {ticket ? (
           <article className="surface-card overflow-hidden">
-            <div className="hero-ink relative overflow-hidden border-b border-black/40 px-6 py-6 text-white">
-              <div className="pointer-events-none absolute -right-16 -top-16 h-56 w-56 rounded-full bg-amber-400/10 blur-3xl" />
-              <div className="pointer-events-none absolute -bottom-10 -left-10 h-48 w-48 rounded-full bg-sky-400/10 blur-3xl" />
-              <div className="relative flex flex-wrap items-start justify-between gap-4">
+            <div className="border-b border-slate-200 bg-white px-5 py-5 sm:px-6">
+              <div className="flex flex-wrap items-start justify-between gap-4">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <span
-                      className={`inline-flex h-7 items-center gap-1 rounded-md px-2 text-[11px] font-semibold ${priorityClass[ticket.priority]}`}
+                      className={`inline-flex h-7 items-center gap-1 rounded px-2 text-[11px] font-semibold ${priorityClass[ticket.priority]}`}
                     >
                       {priorityIcon(ticket.priority)}
                       {ticket.priority}
                     </span>
-                    <span className="rounded-md bg-white/10 px-2 py-1 font-mono text-[11px] tracking-wide text-stone-200 ring-1 ring-white/10">
+                    <span className="rounded bg-slate-100 px-2 py-1 font-mono text-[11px] tracking-wide text-slate-600 ring-1 ring-slate-200">
                       TK-{ticket.ticketNumber}
                     </span>
-                    <span className="inline-flex h-7 items-center rounded-md bg-white/10 px-2 text-[11px] font-semibold capitalize text-stone-100 ring-1 ring-white/10">
+                    <span className={`inline-flex h-7 items-center rounded px-2 text-[11px] font-semibold capitalize ${statusTone[ticket.status]}`}>
                       {label(ticket.status)}
                     </span>
-                    <span className="inline-flex h-7 items-center rounded-md bg-white/10 px-2 text-[11px] font-semibold text-stone-100 ring-1 ring-white/10">
+                    <span className="inline-flex h-7 items-center rounded bg-slate-50 px-2 text-[11px] font-semibold text-slate-600 ring-1 ring-slate-200">
                       {ticket.createdFrom}
                     </span>
                   </div>
-                  <h2 className="mt-4 max-w-3xl text-[26px] font-semibold leading-[1.2] tracking-tight">
+                  <h2 className="mt-4 max-w-3xl text-[24px] font-semibold leading-[1.2] tracking-tight text-slate-950">
                     {ticket.title}
                   </h2>
-                  <p className="mt-3 max-w-3xl text-[14px] leading-6 text-stone-300/90">
+                  <p className="mt-3 max-w-3xl text-[14px] leading-6 text-slate-600">
                     {ticket.description || "No description yet."}
                   </p>
-                  <p className="mt-3 text-[12px] text-stone-400">
+                  <p className="mt-3 text-[12px] text-slate-500">
                     Reported by{" "}
-                    <span className="font-medium text-stone-200">
+                    <span className="font-medium text-slate-800">
                       {ticket.reporterEmail ?? "system alert"}
                     </span>
                     {" · "}
@@ -1157,11 +1150,11 @@ export function TicketDetailConsole({
                     </span>
                   </p>
                 </div>
-                <div className="rounded-xl border border-white/10 bg-white/[0.04] p-3 backdrop-blur">
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-stone-400">
+                <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
                     Last refresh
                   </p>
-                  <p className="mt-1 text-[12.5px] font-semibold tabular-nums">
+                  <p className="mt-1 text-[12.5px] font-semibold tabular-nums text-slate-800">
                     {formatDateTime(data.refreshedAt)}
                   </p>
                 </div>
@@ -1182,7 +1175,7 @@ export function TicketDetailConsole({
                       return "Acknowledged";
                     })
                   }
-                  className="btn-primary inline-flex h-11 items-center justify-center gap-2 rounded-xl px-3 text-sm font-semibold disabled:opacity-60"
+                  className="btn-primary inline-flex h-11 items-center justify-center gap-2 rounded-md px-3 text-sm font-semibold disabled:opacity-60"
                 >
                   <CheckCircle2 className="h-4 w-4" />
                   Acknowledge
@@ -1199,7 +1192,7 @@ export function TicketDetailConsole({
                       return "Resolved";
                     })
                   }
-                  className="btn-success inline-flex h-11 items-center justify-center gap-2 rounded-xl px-3 text-sm font-semibold disabled:opacity-60"
+                  className="btn-success inline-flex h-11 items-center justify-center gap-2 rounded-md px-3 text-sm font-semibold disabled:opacity-60"
                 >
                   <CheckCircle2 className="h-4 w-4" />
                   Resolve
@@ -1216,7 +1209,7 @@ export function TicketDetailConsole({
                       return "Reopened";
                     })
                   }
-                  className="btn-soft inline-flex h-11 items-center justify-center gap-2 rounded-xl px-3 text-sm font-semibold disabled:opacity-60"
+                  className="btn-soft inline-flex h-11 items-center justify-center gap-2 rounded-md px-3 text-sm font-semibold disabled:opacity-60"
                 >
                   <XCircle className="h-4 w-4" />
                   Reopen
@@ -1311,7 +1304,7 @@ export function TicketDetailConsole({
 
               <div className="mt-6 grid gap-5 lg:grid-cols-[minmax(0,1fr)_280px]">
                 <form onSubmit={submitComment} className="space-y-3">
-                  <label className="grid min-w-0 gap-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-stone-500">
+                  <label className="grid min-w-0 gap-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">
                     Comment
                     <textarea
                       value={comment}
@@ -1319,13 +1312,13 @@ export function TicketDetailConsole({
                       rows={5}
                       placeholder="Add an update for the team..."
                       disabled={isPending || !canMutate}
-                      className="input-field w-full min-w-0 resize-none px-3 py-2.5 text-sm normal-case tracking-normal text-stone-900 placeholder:text-stone-400 disabled:bg-stone-50"
+                      className="input-field w-full min-w-0 resize-none px-3 py-2.5 text-sm normal-case tracking-normal text-slate-900 placeholder:text-slate-400 disabled:bg-slate-50"
                     />
                   </label>
                   <button
                     type="submit"
                     disabled={!comment.trim() || isPending || !canMutate}
-                    className="btn-soft inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl px-3 text-sm font-semibold disabled:opacity-60"
+                    className="btn-soft inline-flex h-10 w-full items-center justify-center gap-2 rounded-md px-3 text-sm font-semibold disabled:opacity-60"
                   >
                     <MessageSquarePlus className="h-4 w-4" />
                     Add comment
@@ -1341,18 +1334,18 @@ export function TicketDetailConsole({
         ) : (
           <div className="surface-card grid min-h-[520px] place-items-center p-8 text-center">
             <div>
-              <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-stone-900 to-stone-700 text-white shadow-lg ring-1 ring-black/10">
-                <Sparkles className="h-7 w-7" />
+              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-md bg-slate-100 text-slate-600 ring-1 ring-slate-200">
+                <Sparkles className="h-6 w-6" />
               </div>
-              <p className="mt-4 text-[15px] font-semibold tracking-tight text-stone-950">
+              <p className="mt-4 text-[15px] font-semibold tracking-tight text-slate-950">
                 Ticket not found
               </p>
-              <p className="mt-1 text-sm text-stone-500">
+              <p className="mt-1 text-sm text-slate-500">
                 It may have been closed or removed from the current dashboard.
               </p>
               <Link
                 href="/"
-                className="btn-primary mt-5 inline-flex h-10 items-center justify-center gap-2 rounded-xl px-4 text-sm font-semibold"
+                className="btn-primary mt-5 inline-flex h-10 items-center justify-center gap-2 rounded-md px-4 text-sm font-semibold"
               >
                 <ArrowLeft className="h-4 w-4" />
                 Back to queue
@@ -1375,35 +1368,35 @@ function IncidentShape({
 }) {
   return (
     <div className="surface-inset p-4">
-      <p className="text-[13px] font-semibold tracking-tight text-stone-950">
+      <p className="text-[13px] font-semibold tracking-tight text-slate-950">
         Incident shape
       </p>
       <div className="mt-4 space-y-3 text-sm">
         <div className="flex items-center justify-between">
-          <span className="text-stone-500">Duplicates</span>
-          <span className="rounded-md bg-white px-2 py-0.5 font-semibold tabular-nums text-stone-900 ring-1 ring-stone-200">
+          <span className="text-slate-500">Duplicates</span>
+          <span className="rounded bg-white px-2 py-0.5 font-semibold tabular-nums text-slate-900 ring-1 ring-slate-200">
             {ticket.duplicateCount}
           </span>
         </div>
         <div className="flex items-center justify-between">
-          <span className="text-stone-500">Score</span>
-          <span className="rounded-md bg-white px-2 py-0.5 font-mono text-[12px] font-semibold tabular-nums text-stone-900 ring-1 ring-stone-200">
+          <span className="text-slate-500">Score</span>
+          <span className="rounded bg-white px-2 py-0.5 font-mono text-[12px] font-semibold tabular-nums text-slate-900 ring-1 ring-slate-200">
             {ticket.importanceScore} x {ticket.urgencyScore}
           </span>
         </div>
         <div className="flex items-center justify-between">
-          <span className="text-stone-500">SLA</span>
-          <span className="font-semibold tabular-nums text-stone-900">
+          <span className="text-slate-500">SLA</span>
+          <span className="font-semibold tabular-nums text-slate-900">
             {ticket.slaDueAt ? formatDateTime(ticket.slaDueAt) : "Not set"}
           </span>
         </div>
         {incident ? (
-          <div className="border-t border-stone-200 pt-3 text-[12.5px] leading-5 text-stone-600">
-            <span className="font-semibold text-stone-800">
+          <div className="border-t border-slate-200 pt-3 text-[12.5px] leading-5 text-slate-600">
+            <span className="font-semibold text-slate-800">
               {incident.blastCount}
             </span>{" "}
             linked alerts, confidence{" "}
-            <span className="font-semibold text-stone-800">
+            <span className="font-semibold text-slate-800">
               {incident.confidence ?? "n/a"}
             </span>
           </div>
@@ -1415,12 +1408,12 @@ function IncidentShape({
 
 function TicketTimeline({ ticket }: { ticket: TicketQueueItem }) {
   return (
-    <div className="mt-7 border-t border-stone-200/70 pt-5">
+    <div className="mt-7 border-t border-slate-200 pt-5">
       <div className="mb-4 flex items-center justify-between">
-        <h3 className="text-[15px] font-semibold tracking-tight text-stone-950">
+        <h3 className="text-[15px] font-semibold tracking-tight text-slate-950">
           Timeline
         </h3>
-        <span className="rounded-full bg-stone-100 px-2.5 py-1 text-[11px] font-semibold tabular-nums text-stone-600 ring-1 ring-stone-200/70">
+        <span className="rounded-md bg-slate-100 px-2.5 py-1 text-[11px] font-semibold tabular-nums text-slate-600 ring-1 ring-slate-200">
           {ticket.comments.length} comments
         </span>
       </div>
@@ -1430,19 +1423,19 @@ function TicketTimeline({ ticket }: { ticket: TicketQueueItem }) {
             <div key={item.id} className="relative grid gap-2 pl-6">
               <span
                 aria-hidden
-                className="absolute left-1.5 top-1.5 h-2.5 w-2.5 rounded-full bg-gradient-to-br from-stone-700 to-stone-900 ring-4 ring-stone-100"
+                className="absolute left-1.5 top-1.5 h-2.5 w-2.5 rounded-full bg-slate-500 ring-4 ring-slate-100"
               />
               {index < ticket.comments.length - 1 ? (
                 <span
                   aria-hidden
-                  className="absolute left-[10px] top-4 h-[calc(100%+0.75rem)] w-px bg-stone-200"
+                  className="absolute left-[10px] top-4 h-[calc(100%+0.75rem)] w-px bg-slate-200"
                 />
               ) : null}
-              <p className="text-[14px] leading-6 text-stone-900">
+              <p className="text-[14px] leading-6 text-slate-900">
                 {item.body}
               </p>
-              <p className="text-[11.5px] text-stone-500">
-                <span className="font-medium text-stone-700">
+              <p className="text-[11.5px] text-slate-500">
+                <span className="font-medium text-slate-700">
                   {item.authorEmail ?? "system"}
                 </span>{" "}
                 ·{" "}
@@ -1453,7 +1446,7 @@ function TicketTimeline({ ticket }: { ticket: TicketQueueItem }) {
             </div>
           ))
         ) : (
-          <p className="text-sm text-stone-500">No comments yet.</p>
+          <p className="text-sm text-slate-500">No comments yet.</p>
         )}
       </div>
     </div>
@@ -1471,7 +1464,7 @@ export function OverviewConsole({ initialData }: { initialData: DashboardData })
   const recentTickets = data.tickets.slice(0, 8);
 
   return (
-    <main className="min-h-screen overflow-x-hidden text-stone-900">
+    <main className="min-h-screen overflow-x-hidden text-slate-900">
       <AppHeader
         title="Operations overview"
         active="overview"
@@ -1488,7 +1481,7 @@ export function OverviewConsole({ initialData }: { initialData: DashboardData })
                 runMutation(() => refresh().then(() => "Refreshed"))
               }
               disabled={isPending}
-              className="btn-primary inline-flex h-10 items-center justify-center gap-2 rounded-full px-4 text-[12.5px] font-semibold disabled:opacity-60"
+              className="btn-primary inline-flex h-9 items-center justify-center gap-2 rounded-md px-3 text-[12.5px] font-semibold disabled:opacity-60"
             >
               <RotateCcw
                 className={`h-4 w-4 ${isPending ? "animate-spin" : ""}`}
@@ -1499,7 +1492,7 @@ export function OverviewConsole({ initialData }: { initialData: DashboardData })
         }
       />
 
-      <section className="mx-auto grid max-w-[1240px] gap-6 px-4 py-6 sm:px-6">
+      <section className="mx-auto grid max-w-[1180px] gap-5 px-4 py-6 sm:px-6">
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           {data.metrics.map((metric) => (
             <MetricCard
@@ -1515,16 +1508,16 @@ export function OverviewConsole({ initialData }: { initialData: DashboardData })
 
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
           <section className="surface-card overflow-hidden">
-            <div className="border-b border-stone-200/70 bg-gradient-to-b from-stone-50 to-white p-5">
+            <div className="border-b border-slate-200 bg-white p-5">
               <div className="flex items-center gap-3">
-                <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-red-500 to-red-700 text-white shadow-md ring-1 ring-black/10">
+                <div className="flex h-9 w-9 items-center justify-center rounded-md bg-red-50 text-red-700 ring-1 ring-red-100">
                   <AlertTriangle className="h-5 w-5" />
                 </div>
                 <div>
-                  <h2 className="text-[15px] font-semibold tracking-tight text-stone-950">
+                  <h2 className="text-[15px] font-semibold tracking-tight text-slate-950">
                     SLA breach watch
                   </h2>
-                  <p className="text-[12.5px] text-stone-500">
+                  <p className="text-[12.5px] text-slate-500">
                     Past due active tickets that need attention.
                   </p>
                 </div>
@@ -1536,7 +1529,7 @@ export function OverviewConsole({ initialData }: { initialData: DashboardData })
                   <TicketListItem key={ticket.id} ticket={ticket} nowMs={nowMs} />
                 ))
               ) : (
-                <div className="px-5 py-12 text-center text-sm text-stone-500">
+                <div className="px-5 py-12 text-center text-sm text-slate-500">
                   No active SLA breaches.
                 </div>
               )}
@@ -1545,14 +1538,14 @@ export function OverviewConsole({ initialData }: { initialData: DashboardData })
 
           <section className="surface-card p-5">
             <div className="flex items-center gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-sky-500 to-sky-700 text-white shadow-md ring-1 ring-black/10">
+              <div className="flex h-9 w-9 items-center justify-center rounded-md bg-blue-50 text-blue-700 ring-1 ring-blue-100">
                 <Users className="h-5 w-5" />
               </div>
               <div>
-                <h2 className="text-[15px] font-semibold tracking-tight text-stone-950">
+                <h2 className="text-[15px] font-semibold tracking-tight text-slate-950">
                   Team load
                 </h2>
-                <p className="text-[12.5px] text-stone-500">
+                <p className="text-[12.5px] text-slate-500">
                   Current open work by team.
                 </p>
               </div>
@@ -1561,25 +1554,25 @@ export function OverviewConsole({ initialData }: { initialData: DashboardData })
               {data.teamLoad.map((team) => (
                 <div
                   key={team.team}
-                  className="rounded-xl border border-stone-200 bg-white p-3"
+                  className="rounded-md border border-slate-200 bg-white p-3"
                 >
                   <div className="flex items-center justify-between gap-3">
-                    <span className="font-semibold text-stone-900">
+                    <span className="font-semibold text-slate-900">
                       {team.team}
                     </span>
-                    <span className="font-mono text-[12px] font-semibold tabular-nums text-stone-500">
+                    <span className="font-mono text-[12px] font-semibold tabular-nums text-slate-500">
                       {team.openTickets} open
                     </span>
                   </div>
-                  <div className="mt-2 h-2 overflow-hidden rounded-full bg-stone-100">
+                  <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100">
                     <div
-                      className="h-full rounded-full bg-gradient-to-r from-amber-400 to-red-500"
+                      className="h-full rounded-full bg-blue-500"
                       style={{
                         width: `${Math.min(100, team.openTickets * 16)}%`,
                       }}
                     />
                   </div>
-                  <p className="mt-2 text-[12px] text-stone-500">
+                  <p className="mt-2 text-[12px] text-slate-500">
                     {team.urgentTickets} urgent, {team.members} members
                   </p>
                 </div>
@@ -1591,14 +1584,14 @@ export function OverviewConsole({ initialData }: { initialData: DashboardData })
         <div className="grid gap-6 xl:grid-cols-2">
           <section className="surface-card p-5">
             <div className="flex items-center gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-stone-900 to-stone-700 text-white shadow-md ring-1 ring-black/10">
+              <div className="flex h-9 w-9 items-center justify-center rounded-md bg-slate-100 text-slate-700 ring-1 ring-slate-200">
                 <Activity className="h-5 w-5" />
               </div>
               <div>
-                <h2 className="text-[15px] font-semibold tracking-tight text-stone-950">
+                <h2 className="text-[15px] font-semibold tracking-tight text-slate-950">
                   Incident snapshots
                 </h2>
-                <p className="text-[12.5px] text-stone-500">
+                <p className="text-[12.5px] text-slate-500">
                   Open incident clusters and duplicate pressure.
                 </p>
               </div>
@@ -1608,23 +1601,23 @@ export function OverviewConsole({ initialData }: { initialData: DashboardData })
                 <Link
                   key={incident.id}
                   href={`/#incident-${incident.id}`}
-                  className="block rounded-xl border border-stone-200 bg-white p-3 transition hover:border-stone-300"
+                  className="block rounded-md border border-slate-200 bg-white p-3 transition hover:border-slate-300"
                 >
                   <div className="flex flex-wrap items-center gap-2">
                     <span
-                      className={`inline-flex h-6 items-center gap-1 rounded-md px-2 text-[11px] font-semibold ${priorityClass[incident.priority]}`}
+                      className={`inline-flex h-6 items-center gap-1 rounded px-2 text-[11px] font-semibold ${priorityClass[incident.priority]}`}
                     >
                       {priorityIcon(incident.priority)}
                       {incident.priority}
                     </span>
-                    <span className="rounded-md bg-stone-100 px-2 py-1 text-[11px] font-semibold capitalize text-stone-600 ring-1 ring-stone-200">
+                    <span className="rounded bg-slate-100 px-2 py-1 text-[11px] font-semibold capitalize text-slate-600 ring-1 ring-slate-200">
                       {incident.status}
                     </span>
                   </div>
-                  <p className="mt-2 text-[13.5px] font-semibold leading-5 text-stone-900">
+                  <p className="mt-2 text-[13.5px] font-semibold leading-5 text-slate-900">
                     {incident.title}
                   </p>
-                  <p className="mt-2 text-[12px] text-stone-500">
+                  <p className="mt-2 text-[12px] text-slate-500">
                     {incident.blastCount} linked alerts, last seen{" "}
                     {formatDateTime(incident.lastSeenAt)}
                   </p>
@@ -1635,34 +1628,34 @@ export function OverviewConsole({ initialData }: { initialData: DashboardData })
 
           <section className="surface-card p-5">
             <div className="flex items-center gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-emerald-700 text-white shadow-md ring-1 ring-black/10">
+              <div className="flex h-9 w-9 items-center justify-center rounded-md bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100">
                 <Inbox className="h-5 w-5" />
               </div>
               <div>
-                <h2 className="text-[15px] font-semibold tracking-tight text-stone-950">
+                <h2 className="text-[15px] font-semibold tracking-tight text-slate-950">
                   Recent queue movement
                 </h2>
-                <p className="text-[12.5px] text-stone-500">
+                <p className="text-[12.5px] text-slate-500">
                   Latest tickets by update time.
                 </p>
               </div>
             </div>
-            <div className="mt-5 divide-y divide-stone-200/70">
+            <div className="mt-5 divide-y divide-slate-200">
               {recentTickets.map((ticket) => (
                 <Link
                   key={ticket.id}
                   href={`/tickets/${ticket.id}`}
-                  className="flex items-center justify-between gap-3 py-3 transition hover:text-stone-950"
+                  className="flex items-center justify-between gap-3 py-3 transition hover:text-slate-950"
                 >
                   <div className="min-w-0">
-                    <p className="truncate text-[13.5px] font-semibold text-stone-900">
+                    <p className="truncate text-[13.5px] font-semibold text-slate-900">
                       {ticket.title}
                     </p>
-                    <p className="mt-1 text-[12px] text-stone-500">
+                    <p className="mt-1 text-[12px] text-slate-500">
                       {ticket.team} · {ticket.assignee}
                     </p>
                   </div>
-                  <span className="shrink-0 font-mono text-[11px] font-semibold text-stone-500">
+                  <span className="shrink-0 font-mono text-[11px] font-semibold text-slate-500">
                     TK-{ticket.ticketNumber}
                   </span>
                 </Link>

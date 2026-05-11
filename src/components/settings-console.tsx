@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  ArrowLeft,
   Database,
   Inbox,
   Layers3,
@@ -29,13 +28,13 @@ function SelectField({
   disabled?: boolean;
 }) {
   return (
-    <label className="grid min-w-0 gap-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-stone-500">
+    <label className="grid min-w-0 gap-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">
       {labelText}
       <select
         value={value}
         disabled={disabled}
         onChange={(event) => onChange(event.target.value)}
-        className="input-field h-10 w-full min-w-0 px-3 text-sm font-medium normal-case tracking-normal text-stone-900 disabled:cursor-not-allowed disabled:bg-stone-50 disabled:text-stone-400"
+        className="input-field h-10 w-full min-w-0 px-3 text-sm font-medium normal-case tracking-normal text-slate-900 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400"
       >
         {children}
       </select>
@@ -59,7 +58,7 @@ function TextField({
   type?: "email" | "password" | "text" | "url";
 }) {
   return (
-    <label className="grid min-w-0 gap-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-stone-500">
+    <label className="grid min-w-0 gap-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">
       {labelText}
       <input
         type={type}
@@ -67,7 +66,7 @@ function TextField({
         value={value}
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
-        className="input-field h-10 w-full min-w-0 px-3 text-sm normal-case tracking-normal text-stone-900 placeholder:text-stone-400"
+        className="input-field h-10 w-full min-w-0 px-3 text-sm normal-case tracking-normal text-slate-900 placeholder:text-slate-400"
       />
     </label>
   );
@@ -206,47 +205,47 @@ export function SettingsConsole() {
   }
 
   return (
-    <main className="min-h-screen text-stone-900">
-      <header className="glass-header sticky top-0 z-20 border-b border-stone-200/70">
-        <div className="mx-auto flex max-w-[920px] flex-col gap-4 px-4 py-4 sm:px-6 md:flex-row md:items-center md:justify-between">
+    <main className="min-h-screen text-slate-900">
+      <header className="glass-header sticky top-0 z-20 border-b border-slate-200">
+        <div className="mx-auto flex max-w-[1180px] flex-col gap-3 px-4 py-3 sm:px-6 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex min-w-0 items-center gap-3">
             <Link
               href="/"
-              className="btn-soft inline-flex h-10 items-center justify-center gap-2 rounded-full px-3.5 text-[12.5px] font-semibold"
+              className="flex h-9 w-9 items-center justify-center rounded-md bg-blue-600 text-white"
+              aria-label="Open inbox"
             >
-              <ArrowLeft className="h-4 w-4" />
-              Back
+              <Inbox className="h-4 w-4" />
             </Link>
             <div className="min-w-0">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-stone-500">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
                 Alert Triage
               </p>
-              <h1 className="truncate text-[22px] font-semibold tracking-tight text-stone-950">
+              <h1 className="truncate text-xl font-semibold tracking-tight text-slate-950">
                 Settings
               </h1>
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <nav className="flex rounded-full border border-stone-200 bg-white/70 p-1 shadow-sm backdrop-blur">
+            <nav className="flex rounded-md border border-slate-200 bg-white p-0.5">
               <Link
                 href="/"
-                className="inline-flex h-9 items-center justify-center gap-2 rounded-full px-3 text-[12.5px] font-semibold text-stone-600 transition hover:bg-white hover:text-stone-950"
+                className="inline-flex h-8 items-center justify-center gap-2 rounded px-3 text-[12.5px] font-semibold text-slate-600 transition hover:bg-slate-50 hover:text-slate-950"
               >
-                <Inbox className="h-4 w-4" />
-                Queue
+                <Inbox className="h-3.5 w-3.5" />
+                Inbox
               </Link>
               <Link
                 href="/overview"
-                className="inline-flex h-9 items-center justify-center gap-2 rounded-full px-3 text-[12.5px] font-semibold text-stone-600 transition hover:bg-white hover:text-stone-950"
+                className="inline-flex h-8 items-center justify-center gap-2 rounded px-3 text-[12.5px] font-semibold text-slate-600 transition hover:bg-slate-50 hover:text-slate-950"
               >
-                <LayoutDashboard className="h-4 w-4" />
+                <LayoutDashboard className="h-3.5 w-3.5" />
                 Overview
               </Link>
               <Link
                 href="/settings"
-                className="inline-flex h-9 items-center justify-center gap-2 rounded-full bg-stone-900 px-3 text-[12.5px] font-semibold text-white shadow-sm"
+                className="inline-flex h-8 items-center justify-center gap-2 rounded bg-slate-900 px-3 text-[12.5px] font-semibold text-white"
               >
-                <Settings className="h-4 w-4" />
+                <Settings className="h-3.5 w-3.5" />
                 Settings
               </Link>
             </nav>
@@ -254,7 +253,7 @@ export function SettingsConsole() {
               type="button"
               onClick={() => runMutation(checkHealth)}
               disabled={isPending}
-              className="btn-soft inline-flex h-10 items-center justify-center gap-2 rounded-full px-3.5 text-[12.5px] font-semibold disabled:opacity-60"
+              className="btn-soft inline-flex h-9 items-center justify-center gap-2 rounded-md px-3 text-[12.5px] font-semibold disabled:opacity-60"
             >
               <ShieldCheck className="h-4 w-4" />
               Check database
@@ -263,45 +262,45 @@ export function SettingsConsole() {
         </div>
       </header>
 
-      <section className="mx-auto grid max-w-[920px] gap-6 px-4 py-8 sm:px-6">
+      <section className="mx-auto grid max-w-[920px] gap-5 px-4 py-6 sm:px-6">
         <article className="surface-card p-6">
           <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-stone-900 to-stone-700 text-white shadow-md ring-1 ring-black/10">
+            <div className="flex h-9 w-9 items-center justify-center rounded-md bg-slate-100 text-slate-700 ring-1 ring-slate-200">
               <Database className="h-5 w-5" />
             </div>
             <div>
-              <h2 className="text-[15px] font-semibold tracking-tight text-stone-950">
+              <h2 className="text-[15px] font-semibold tracking-tight text-slate-950">
                 Inbound webhook
               </h2>
-              <p className="text-[12.5px] text-stone-500">
+              <p className="text-[12.5px] text-slate-500">
                 Point your provider at this URL to receive alerts.
               </p>
             </div>
           </div>
           <div className="mt-4 grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
-            <code className="surface-inset block overflow-x-auto px-3 py-2 font-mono text-[12px] text-stone-800">
+            <code className="surface-inset block overflow-x-auto px-3 py-2 font-mono text-[12px] text-slate-800">
               POST /api/webhooks/inbound-email
             </code>
             <button
               type="button"
               onClick={copyWebhookUrl}
-              className="btn-primary inline-flex h-10 items-center justify-center gap-2 rounded-lg px-3 text-sm font-semibold"
+              className="btn-primary inline-flex h-10 items-center justify-center gap-2 rounded-md px-3 text-sm font-semibold"
             >
               <Send className="h-4 w-4" />
               Copy URL
             </button>
           </div>
-          <p className="mt-3 text-[12.5px] text-stone-500">
+          <p className="mt-3 text-[12.5px] text-slate-500">
             Authenticate with{" "}
-            <code className="rounded bg-stone-100 px-1 py-0.5 font-mono text-[11.5px]">
+            <code className="rounded bg-slate-100 px-1 py-0.5 font-mono text-[11.5px]">
               Authorization: Bearer &lt;INBOUND_WEBHOOK_SECRET&gt;
             </code>{" "}
             or the{" "}
-            <code className="rounded bg-stone-100 px-1 py-0.5 font-mono text-[11.5px]">
+            <code className="rounded bg-slate-100 px-1 py-0.5 font-mono text-[11.5px]">
               x-webhook-secret
             </code>{" "}
             header. Resend providers use Svix headers and{" "}
-            <code className="rounded bg-stone-100 px-1 py-0.5 font-mono text-[11.5px]">
+            <code className="rounded bg-slate-100 px-1 py-0.5 font-mono text-[11.5px]">
               RESEND_WEBHOOK_SECRET
             </code>
             .
@@ -310,14 +309,14 @@ export function SettingsConsole() {
 
         <article className="surface-card p-6">
           <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-300 to-amber-500 text-amber-950 shadow-md ring-1 ring-amber-600/20">
+            <div className="flex h-9 w-9 items-center justify-center rounded-md bg-amber-50 text-amber-700 ring-1 ring-amber-100">
               <RadioTower className="h-5 w-5" />
             </div>
             <div>
-              <h2 className="text-[15px] font-semibold tracking-tight text-stone-950">
+              <h2 className="text-[15px] font-semibold tracking-tight text-slate-950">
                 Send a test alert
               </h2>
-              <p className="text-[12.5px] text-stone-500">
+              <p className="text-[12.5px] text-slate-500">
                 Posts a synthetic alert to your webhook.
               </p>
             </div>
@@ -356,7 +355,7 @@ export function SettingsConsole() {
             <button
               type="submit"
               disabled={isPending}
-              className="btn-primary sm:col-span-2 inline-flex h-11 items-center justify-center gap-2 rounded-xl px-3 text-sm font-semibold disabled:opacity-60"
+              className="btn-primary sm:col-span-2 inline-flex h-11 items-center justify-center gap-2 rounded-md px-3 text-sm font-semibold disabled:opacity-60"
             >
               <RadioTower className="h-4 w-4" />
               Send test alert
@@ -366,14 +365,14 @@ export function SettingsConsole() {
 
         <article className="surface-card p-6">
           <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-sky-500 to-sky-700 text-white shadow-md ring-1 ring-black/10">
+            <div className="flex h-9 w-9 items-center justify-center rounded-md bg-blue-50 text-blue-700 ring-1 ring-blue-100">
               <Layers3 className="h-5 w-5" />
             </div>
             <div>
-              <h2 className="text-[15px] font-semibold tracking-tight text-stone-950">
+              <h2 className="text-[15px] font-semibold tracking-tight text-slate-950">
                 Example payloads
               </h2>
-              <p className="text-[12.5px] text-stone-500">
+              <p className="text-[12.5px] text-slate-500">
                 Copy a sample to test from a CLI or a provider sandbox.
               </p>
             </div>
@@ -394,14 +393,14 @@ export function SettingsConsole() {
               <button
                 type="button"
                 onClick={copyExamplePayload}
-                className="btn-soft inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg px-3 text-sm font-semibold"
+                className="btn-soft inline-flex h-10 w-full items-center justify-center gap-2 rounded-md px-3 text-sm font-semibold"
               >
                 <Send className="h-4 w-4" />
                 Copy payload
               </button>
             </div>
           </div>
-          <pre className="surface-inset mt-3 max-h-72 overflow-auto px-3 py-2 font-mono text-[12px] leading-5 text-stone-800">
+          <pre className="surface-inset mt-3 max-h-72 overflow-auto px-3 py-2 font-mono text-[12px] leading-5 text-slate-800">
             {JSON.stringify(
               (
                 exampleProviders.find((entry) => entry.id === exampleId) ??
@@ -415,7 +414,7 @@ export function SettingsConsole() {
       </section>
 
       {notice ? (
-        <div className="fixed bottom-5 left-1/2 z-50 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 rounded-2xl border border-stone-200 bg-white/95 px-4 py-3 text-sm font-semibold text-stone-800 shadow-[0_24px_48px_-24px_rgba(20,14,5,0.45)] backdrop-blur">
+        <div className="fixed bottom-5 left-1/2 z-50 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-800 shadow-lg">
           <div className="flex items-center gap-2">
             <span className="h-2 w-2 rounded-full bg-emerald-500 ring-pulse" />
             {notice}

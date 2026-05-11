@@ -4,20 +4,17 @@ import {
   Activity,
   AlertTriangle,
   ArrowLeft,
-  Bell,
   CheckCircle2,
   CircleDot,
   Clock3,
   Gauge,
   Inbox,
-  LayoutDashboard,
   MessageSquarePlus,
   Plus,
   RadioTower,
   RotateCcw,
   Search,
   Send,
-  Settings,
   ShieldCheck,
   SlidersHorizontal,
   Sparkles,
@@ -28,6 +25,7 @@ import {
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import type { FormEvent, ReactNode, RefObject } from "react";
+import { HelpdeskShell } from "@/components/helpdesk-shell";
 import type {
   DashboardData,
   IncidentSnapshot,
@@ -54,13 +52,6 @@ const priorityClass: Record<Priority, string> = {
   P2: "priority-p2",
   P3: "priority-p3",
   P4: "priority-p4",
-};
-
-const priorityRail: Record<Priority, string> = {
-  P1: "priority-rail-p1",
-  P2: "priority-rail-p2",
-  P3: "priority-rail-p3",
-  P4: "priority-rail-p4",
 };
 
 const statusTone: Record<TicketStatus, string> = {
@@ -141,6 +132,20 @@ function formatDateTime(value: string) {
 
 function label(value: string) {
   return value.replace("_", " ");
+}
+
+function friendlyStatus(status: TicketStatus) {
+  if (status === "waiting") return "Waiting";
+  if (status === "resolved" || status === "closed") return "Done";
+  if (status === "in_progress") return "Being worked";
+  return "Needs attention";
+}
+
+function friendlyPriority(priority: Priority) {
+  if (priority === "P1") return "High";
+  if (priority === "P2") return "Medium";
+  if (priority === "P3") return "Normal";
+  return "Low";
 }
 
 function priorityIcon(priority: Priority) {
@@ -239,81 +244,6 @@ function TextField({
   );
 }
 
-function AppHeader({
-  title,
-  subtitle = "Alert Triage",
-  active,
-  actions,
-}: {
-  title: string;
-  subtitle?: string;
-  active: "queue" | "overview" | "settings";
-  actions?: ReactNode;
-}) {
-  const links = [
-    { href: "/", label: "Queue", key: "queue" as const, icon: Inbox },
-    {
-      href: "/overview",
-      label: "Overview",
-      key: "overview" as const,
-      icon: LayoutDashboard,
-    },
-    {
-      href: "/settings",
-      label: "Settings",
-      key: "settings" as const,
-      icon: Settings,
-    },
-  ];
-
-  return (
-    <header className="glass-header sticky top-0 z-20 border-b border-slate-200">
-      <div className="mx-auto flex max-w-[1180px] flex-col gap-3 px-4 py-3 sm:px-6 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex min-w-0 items-center gap-3">
-          <Link
-            href="/"
-            className="flex h-9 w-9 items-center justify-center rounded-md bg-blue-600 text-white"
-            aria-label="Open queue"
-          >
-            <Bell className="h-4 w-4" />
-          </Link>
-          <div className="min-w-0">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-              {subtitle}
-            </p>
-            <h1 className="truncate text-xl font-semibold tracking-tight text-slate-950">
-              {title}
-            </h1>
-          </div>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <nav className="flex rounded-md border border-slate-200 bg-white p-0.5">
-            {links.map((link) => {
-              const Icon = link.icon;
-              const isActiveLink = active === link.key;
-              return (
-                <Link
-                  key={link.href}
-                  href={link.href}
-                  className={`inline-flex h-8 items-center justify-center gap-2 rounded px-3 text-[12.5px] font-semibold transition ${
-                    isActiveLink
-                      ? "bg-slate-900 text-white"
-                      : "text-slate-600 hover:bg-slate-50 hover:text-slate-950"
-                  }`}
-                >
-                  <Icon className="h-3.5 w-3.5" />
-                  {link.label}
-                </Link>
-              );
-            })}
-          </nav>
-          {actions}
-        </div>
-      </div>
-    </header>
-  );
-}
-
 function Notice({ message }: { message: string | null }) {
   if (!message) return null;
 
@@ -324,6 +254,56 @@ function Notice({ message }: { message: string | null }) {
         {message}
       </div>
     </div>
+  );
+}
+
+function AppHeader({
+  title,
+  active,
+  actions,
+}: {
+  title: string;
+  active: "queue" | "overview";
+  actions?: ReactNode;
+}) {
+  return (
+    <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 backdrop-blur">
+      <div className="mx-auto flex max-w-[1180px] flex-col gap-3 px-4 py-3 sm:px-6 lg:flex-row lg:items-center lg:justify-between">
+        <div className="min-w-0">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+            Alert Triage
+          </p>
+          <h1 className="truncate text-xl font-semibold tracking-tight text-slate-950">
+            {title}
+          </h1>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <nav className="flex rounded-md border border-slate-200 bg-white p-0.5">
+            <Link
+              href="/"
+              className={`inline-flex h-8 items-center justify-center rounded px-3 text-[12.5px] font-semibold ${
+                active === "queue"
+                  ? "bg-slate-900 text-white"
+                  : "text-slate-600 hover:bg-slate-50 hover:text-slate-950"
+              }`}
+            >
+              Inbox
+            </Link>
+            <Link
+              href="/overview"
+              className={`inline-flex h-8 items-center justify-center rounded px-3 text-[12.5px] font-semibold ${
+                active === "overview"
+                  ? "bg-slate-900 text-white"
+                  : "text-slate-600 hover:bg-slate-50 hover:text-slate-950"
+              }`}
+            >
+              Overview
+            </Link>
+          </nav>
+          {actions}
+        </div>
+      </div>
+    </header>
   );
 }
 
@@ -416,49 +396,46 @@ function TicketListItem({
   return (
     <Link
       href={`/tickets/${ticket.id}`}
-      className="relative block w-full border-b border-slate-200 bg-white px-4 py-3 text-left transition-colors last:border-b-0 hover:bg-slate-50 sm:px-5"
+      className="group block rounded-2xl border border-[#e7dfd2] bg-white px-4 py-4 text-left transition hover:-translate-y-0.5 hover:border-[#cfc4b4] hover:shadow-sm sm:px-5"
     >
-      <span
-        className={`absolute bottom-3 left-0 top-3 w-[3px] rounded-r-full ${priorityRail[ticket.priority]}`}
-      />
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="mb-2 flex flex-wrap items-center gap-1.5">
             <span
-              className={`inline-flex h-6 items-center gap-1 rounded px-2 text-[11px] font-semibold ${priorityClass[ticket.priority]}`}
+              className={`inline-flex h-6 items-center gap-1 rounded-full px-2.5 text-[11px] font-semibold ${priorityClass[ticket.priority]}`}
             >
               {priorityIcon(ticket.priority)}
-              {ticket.priority}
+              {friendlyPriority(ticket.priority)}
             </span>
             <span
-              className={`inline-flex h-6 items-center rounded px-2 text-[11px] font-semibold capitalize ${statusTone[ticket.status]}`}
+              className={`inline-flex h-6 items-center rounded-full px-2.5 text-[11px] font-semibold ${statusTone[ticket.status]}`}
             >
-              {label(ticket.status)}
+              {friendlyStatus(ticket.status)}
             </span>
             {isBreached ? (
-              <span className="inline-flex h-6 items-center gap-1 rounded bg-red-50 px-2 text-[11px] font-semibold text-red-700 ring-1 ring-red-100">
+              <span className="inline-flex h-6 items-center gap-1 rounded-full bg-red-50 px-2.5 text-[11px] font-semibold text-red-700 ring-1 ring-red-100">
                 <Clock3 className="h-3 w-3" />
-                breach
+                Due now
               </span>
             ) : null}
           </div>
-          <h2 className="line-clamp-2 text-[13.5px] font-semibold leading-5 text-slate-950">
+          <h2 className="line-clamp-2 text-[15px] font-semibold leading-6 text-[#1f2937]">
             {ticket.title}
           </h2>
         </div>
-        <span className="shrink-0 rounded bg-slate-100 px-2 py-1 font-mono text-[10px] font-semibold tracking-wide text-slate-600">
+        <span className="shrink-0 rounded-full bg-[#f7f5f0] px-2.5 py-1 font-mono text-[10px] font-semibold tracking-wide text-[#737064] ring-1 ring-[#e7dfd2]">
           TK-{ticket.ticketNumber}
         </span>
       </div>
-      <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-slate-500">
-        <span className="truncate">{ticket.team}</span>
-        <span className="truncate">{ticket.assignee}</span>
+      <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-[#737064]">
+        <span className="truncate">Customer: {ticket.reporterEmail ?? "System alert"}</span>
+        <span className="truncate">Owner: {ticket.assignee}</span>
         <span
           className={`font-semibold tabular-nums ${
             isBreached ? "text-red-700" : "text-slate-600"
           }`}
         >
-          {ticket.slaDueAt ? formatDateTime(ticket.slaDueAt) : "No SLA"}
+          {ticket.slaDueAt ? `Due ${formatDateTime(ticket.slaDueAt)}` : "No due time"}
         </span>
       </div>
     </Link>
@@ -788,7 +765,7 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
   } = useDashboardState(initialData);
   const [query, setQuery] = useState("");
   const [priorityFilter, setPriorityFilter] = useState<"all" | Priority>("all");
-  const [statusFilter, setStatusFilter] = useState<FilterStatus>("active");
+  const [statusFilter, setStatusFilter] = useState<FilterStatus>("all");
   const [teamFilter, setTeamFilter] = useState("all");
   const [showBreachedOnly, setShowBreachedOnly] = useState(false);
   const [isNewTicketOpen, setIsNewTicketOpen] = useState(false);
@@ -804,7 +781,7 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
   function resetFilters() {
     setQuery("");
     setPriorityFilter("all");
-    setStatusFilter("active");
+    setStatusFilter("all");
     setTeamFilter("all");
     setShowBreachedOnly(false);
   }
@@ -845,44 +822,39 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
   const hasActiveFilters =
     query.trim().length > 0 ||
     priorityFilter !== "all" ||
-    statusFilter !== "active" ||
+    statusFilter !== "all" ||
     teamFilter !== "all" ||
     showBreachedOnly;
 
   return (
-    <main className="min-h-screen overflow-x-hidden text-slate-900">
-      <AppHeader
-        title="Inbox"
-        active="queue"
-        actions={
-          <>
-            <button
-              type="button"
-              onClick={() => setIsNewTicketOpen(true)}
-              disabled={!canMutate}
-              className="btn-soft inline-flex h-9 items-center justify-center gap-2 rounded-md px-3 text-[12.5px] font-semibold disabled:opacity-60"
-            >
-              <Plus className="h-4 w-4" />
-              New ticket
-            </button>
-            <button
-              type="button"
-              onClick={() =>
-                runMutation(() => refresh().then(() => "Refreshed"))
-              }
-              disabled={isPending}
-              className="btn-primary inline-flex h-9 items-center justify-center gap-2 rounded-md px-3 text-[12.5px] font-semibold disabled:opacity-60"
-            >
-              <RotateCcw
-                className={`h-4 w-4 ${isPending ? "animate-spin" : ""}`}
-              />
-              Refresh
-            </button>
-          </>
-        }
-      />
-
-      <section className="mx-auto max-w-[900px] px-4 py-6 sm:px-6">
+    <HelpdeskShell
+      active="home"
+      title="What needs me now"
+      subtitle="Home"
+      actions={
+        <>
+          <button
+            type="button"
+            onClick={() => setIsNewTicketOpen(true)}
+            disabled={!canMutate}
+            className="btn-soft inline-flex h-10 items-center justify-center gap-2 rounded-full px-4 text-[13px] font-bold disabled:opacity-60"
+          >
+            <Plus className="h-4 w-4" />
+            New request
+          </button>
+          <button
+            type="button"
+            onClick={() => runMutation(() => refresh().then(() => "Refreshed"))}
+            disabled={isPending}
+            className="btn-primary inline-flex h-10 items-center justify-center gap-2 rounded-full px-4 text-[13px] font-bold disabled:opacity-60"
+          >
+            <RotateCcw className={`h-4 w-4 ${isPending ? "animate-spin" : ""}`} />
+            Refresh
+          </button>
+        </>
+      }
+    >
+      <section className="mx-auto grid max-w-[1080px] gap-5 px-4 py-5 sm:px-6">
         <section className="surface-card overflow-hidden">
           <div className="border-b border-slate-200 bg-white p-4 sm:p-5">
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -898,7 +870,7 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
                     <span className="font-semibold text-slate-700 tabular-nums">
                       {activeTickets}
                     </span>{" "}
-                    active ·{" "}
+                    active /{" "}
                     <span className="tabular-nums">{filteredTickets.length}</span>{" "}
                     shown
                   </p>
@@ -1033,7 +1005,7 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
         canMutate={canMutate}
       />
       <Notice message={notice} />
-    </main>
+    </HelpdeskShell>
   );
 }
 
@@ -1144,7 +1116,7 @@ export function TicketDetailConsole({
                     <span className="font-medium text-slate-800">
                       {ticket.reporterEmail ?? "system alert"}
                     </span>
-                    {" · "}
+                    {" / "}
                     <span className="tabular-nums">
                       {formatDateTime(ticket.createdAt)}
                     </span>
@@ -1438,7 +1410,7 @@ function TicketTimeline({ ticket }: { ticket: TicketQueueItem }) {
                 <span className="font-medium text-slate-700">
                   {item.authorEmail ?? "system"}
                 </span>{" "}
-                ·{" "}
+                /{" "}
                 <span className="tabular-nums">
                   {formatDateTime(item.createdAt)}
                 </span>
@@ -1652,7 +1624,7 @@ export function OverviewConsole({ initialData }: { initialData: DashboardData })
                       {ticket.title}
                     </p>
                     <p className="mt-1 text-[12px] text-slate-500">
-                      {ticket.team} · {ticket.assignee}
+                      {ticket.team} / {ticket.assignee}
                     </p>
                   </div>
                   <span className="shrink-0 font-mono text-[11px] font-semibold text-slate-500">

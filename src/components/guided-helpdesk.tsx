@@ -1,16 +1,19 @@
 "use client";
 
 import {
+  Activity,
   AlertTriangle,
   CheckCircle2,
   Clock3,
   Database,
+  Inbox,
   MessageSquarePlus,
   Plus,
   RadioTower,
   RotateCcw,
   Search,
   Send,
+  Settings,
   ShieldCheck,
   SlidersHorizontal,
   Sparkles,
@@ -107,6 +110,12 @@ function friendlyPriority(priority: Priority) {
   if (priority === "P2") return "Medium";
   if (priority === "P3") return "Normal";
   return "Low";
+}
+
+function priorityIcon(priority: Priority) {
+  if (priority === "P1") return <AlertTriangle className="h-3.5 w-3.5" />;
+  if (priority === "P2") return <RadioTower className="h-3.5 w-3.5" />;
+  return <Sparkles className="h-3.5 w-3.5" />;
 }
 
 function isActive(ticket: TicketQueueItem) {
@@ -577,6 +586,268 @@ function NewTicketModal({
           </button>
         </form>
       </div>
+    </div>
+  );
+}
+
+export function HomeConsole({ initialData }: { initialData: DashboardData }) {
+  const { data, notice, isPending, runMutation, refresh, checkHealth, createTicket } =
+    useDashboardState(initialData);
+  const [isNewTicketOpen, setIsNewTicketOpen] = useState(false);
+
+  const nowMs = new Date(data.refreshedAt).getTime();
+  const isLive = data.source === "database";
+  const canMutate = isLive || (data.source === "demo" && !data.dbError);
+  const openTickets = data.tickets.filter(isActive);
+  const urgentTickets = openTickets
+    .filter((ticket) => ticket.priority === "P1" || ticket.priority === "P2")
+    .slice(0, 4);
+  const dueNowTickets = openTickets.filter((ticket) =>
+    isBreachedTicket(ticket, nowMs),
+  );
+  const recentTickets = data.tickets.slice(0, 5);
+  const staffedTeams = data.teams.filter((team) => team.onCall > 0).length;
+
+  function submitNewTicket(draft: DraftTicket) {
+    runMutation(async () => {
+      await createTicket(draft);
+    });
+    setIsNewTicketOpen(false);
+  }
+
+  return (
+    <HelpdeskShell
+      active="home"
+      title="Command center"
+      subtitle="Home"
+      actions={
+        <>
+          <HealthButton
+            isLive={isLive}
+            isPending={isPending}
+            onClick={() => runMutation(checkHealth)}
+          />
+          <button
+            type="button"
+            onClick={() => setIsNewTicketOpen(true)}
+            disabled={!canMutate}
+            className="btn-primary inline-flex h-10 items-center justify-center gap-2 rounded-full px-4 text-[13px] font-bold disabled:opacity-60"
+          >
+            <Plus className="h-4 w-4" />
+            New request
+          </button>
+        </>
+      }
+    >
+      <section className="mx-auto grid max-w-[1120px] gap-5 px-4 py-5 sm:px-6">
+        <section className="rounded-[32px] border border-[#e7dfd2] bg-white p-5 shadow-sm sm:p-6">
+          <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px] lg:items-center">
+            <div>
+              <div className="inline-flex items-center gap-2 rounded-full bg-[#e8f7f3] px-3 py-1 text-[12px] font-bold text-[#1f6f61] ring-1 ring-[#c7eee4]">
+                <RadioTower className="h-3.5 w-3.5" />
+                Live intake
+              </div>
+              <h2 className="mt-4 max-w-2xl text-3xl font-bold tracking-tight text-[#1f2937] sm:text-4xl">
+                Your alert desk is listening.
+              </h2>
+              <p className="mt-3 max-w-2xl text-[15px] leading-7 text-[#5f625d]">
+                Watch the live queue, confirm the database is connected, and
+                jump straight into setup or ticket work without landing on the
+                same page twice.
+              </p>
+              <div className="mt-5 flex flex-wrap gap-2">
+                <Link
+                  href="/tickets"
+                  className="btn-primary inline-flex h-11 items-center justify-center gap-2 rounded-full px-4 text-sm font-bold"
+                >
+                  <Inbox className="h-4 w-4" />
+                  Open tickets
+                </Link>
+                <Link
+                  href="/settings"
+                  className="btn-soft inline-flex h-11 items-center justify-center gap-2 rounded-full px-4 text-sm font-bold"
+                >
+                  <Settings className="h-4 w-4" />
+                  Setup intake
+                </Link>
+                <button
+                  type="button"
+                  onClick={() =>
+                    runMutation(() => refresh().then(() => "Refreshed"))
+                  }
+                  disabled={isPending}
+                  className="btn-soft inline-flex h-11 items-center justify-center gap-2 rounded-full px-4 text-sm font-bold disabled:opacity-60"
+                >
+                  <RotateCcw
+                    className={`h-4 w-4 ${isPending ? "animate-spin" : ""}`}
+                  />
+                  Refresh
+                </button>
+              </div>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
+              <SummaryCount label="Open tickets" value={openTickets.length} />
+              <SummaryCount label="High priority" value={urgentTickets.length} />
+              <SummaryCount label="Teams on call" value={staffedTeams} />
+            </div>
+          </div>
+        </section>
+
+        <div className="grid gap-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(340px,0.85fr)]">
+          <section className="rounded-[28px] border border-[#e7dfd2] bg-white/80 p-4 shadow-sm sm:p-5">
+            <div className="mb-4 flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <h2 className="text-[18px] font-bold tracking-tight text-[#1f2937]">
+                  Needs eyes first
+                </h2>
+                <p className="mt-1 text-sm leading-5 text-[#737064]">
+                  Open P1 and P2 work pulled out of the queue.
+                </p>
+              </div>
+              <span className="rounded-full bg-[#f7f5f0] px-3 py-1 text-[12px] font-bold tabular-nums text-[#24324a] ring-1 ring-[#e7dfd2]">
+                {urgentTickets.length}
+              </span>
+            </div>
+            {urgentTickets.length > 0 ? (
+              <div className="grid gap-3">
+                {urgentTickets.map((ticket) => (
+                  <TicketTask key={ticket.id} ticket={ticket} nowMs={nowMs} />
+                ))}
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-dashed border-[#d8cfc1] bg-[#fbfaf7] px-4 py-10 text-center text-sm font-medium text-[#737064]">
+                No high-priority open work right now.
+              </div>
+            )}
+          </section>
+
+          <section className="rounded-[28px] border border-[#e7dfd2] bg-white p-5 shadow-sm">
+            <div className="flex items-start gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-[#e8f7f3] text-[#1f6f61] ring-1 ring-[#c7eee4]">
+                <ShieldCheck className="h-5 w-5" />
+              </div>
+              <div>
+                <h2 className="text-lg font-bold text-[#1f2937]">
+                  System status
+                </h2>
+                <p className="mt-1 text-sm leading-5 text-[#737064]">
+                  Production is using {isLive ? "Neon database data" : "demo data"}.
+                </p>
+              </div>
+            </div>
+            <div className="mt-5 grid gap-3">
+              <StatusRow
+                label="Database"
+                value={isLive ? "Connected" : "Demo mode"}
+                good={isLive}
+              />
+              <StatusRow
+                label="Due now"
+                value={`${dueNowTickets.length} active`}
+                good={dueNowTickets.length === 0}
+              />
+              <StatusRow
+                label="On-call coverage"
+                value={`${staffedTeams}/${data.teams.length} teams`}
+                good={staffedTeams === data.teams.length}
+              />
+            </div>
+            <Link
+              href="/overview"
+              className="btn-soft mt-5 inline-flex h-11 w-full items-center justify-center gap-2 rounded-full px-4 text-sm font-bold"
+            >
+              <Activity className="h-4 w-4" />
+              View overview
+            </Link>
+          </section>
+        </div>
+
+        <section className="rounded-[28px] border border-[#e7dfd2] bg-white/80 p-4 shadow-sm sm:p-5">
+          <div className="mb-4 flex items-start justify-between gap-4">
+            <div>
+              <h2 className="text-[18px] font-bold tracking-tight text-[#1f2937]">
+                Recent movement
+              </h2>
+              <p className="mt-1 text-sm leading-5 text-[#737064]">
+                Latest tickets by update time.
+              </p>
+            </div>
+            <Link
+              href="/tickets"
+              className="rounded-full bg-[#f7f5f0] px-3 py-1.5 text-[12px] font-bold text-[#24324a] ring-1 ring-[#e7dfd2] hover:bg-white"
+            >
+              See all
+            </Link>
+          </div>
+          <div className="grid gap-2 md:grid-cols-2">
+            {recentTickets.map((ticket) => (
+              <Link
+                key={ticket.id}
+                href={`/tickets/${ticket.id}`}
+                className="rounded-2xl border border-[#e7dfd2] bg-white px-4 py-3 transition hover:-translate-y-0.5 hover:border-[#cfc4b4] hover:shadow-sm"
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <span
+                    className={`inline-flex h-6 items-center gap-1 rounded-full px-2.5 text-[11px] font-bold ${priorityClass[ticket.priority]}`}
+                  >
+                    {priorityIcon(ticket.priority)}
+                    {friendlyPriority(ticket.priority)}
+                  </span>
+                  <span className="shrink-0 font-mono text-[10px] font-bold tracking-wide text-[#737064]">
+                    TK-{ticket.ticketNumber}
+                  </span>
+                </div>
+                <p className="mt-2 truncate text-sm font-bold text-[#1f2937]">
+                  {ticket.title}
+                </p>
+                <p className="mt-1 truncate text-[12px] text-[#737064]">
+                  {ticket.team} / {ticket.assignee}
+                </p>
+              </Link>
+            ))}
+          </div>
+        </section>
+      </section>
+      <NewTicketModal
+        isOpen={isNewTicketOpen}
+        onClose={() => setIsNewTicketOpen(false)}
+        data={data}
+        onSubmit={submitNewTicket}
+        isPending={isPending}
+        canMutate={canMutate}
+      />
+      <Notice message={notice} />
+    </HelpdeskShell>
+  );
+}
+
+function StatusRow({
+  label,
+  value,
+  good,
+}: {
+  label: string;
+  value: string;
+  good: boolean;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-2xl border border-[#e7dfd2] bg-[#fbfaf7] px-3 py-3">
+      <span className="text-sm font-bold text-[#1f2937]">{label}</span>
+      <span
+        className={`inline-flex items-center gap-2 rounded-full bg-white px-2.5 py-1 text-[12px] font-bold ring-1 ${
+          good
+            ? "text-[#1f6f61] ring-[#c7eee4]"
+            : "text-amber-700 ring-amber-100"
+        }`}
+      >
+        <span
+          className={`h-2 w-2 rounded-full ${
+            good ? "bg-emerald-500" : "bg-amber-500"
+          }`}
+        />
+        {value}
+      </span>
     </div>
   );
 }

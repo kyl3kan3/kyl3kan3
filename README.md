@@ -29,6 +29,8 @@ The app is build-safe without `DATABASE_URL`; it falls back to demo data until N
 
 `OPENAI_API_KEY` enables AI reading and assignment for inbound alert/client emails. `OPENAI_TRIAGE_MODEL` defaults to `gpt-5-mini`; when the key is missing or the model response is invalid, the webhook still creates assigned tickets with deterministic fallback routing.
 
+`ALLOWED_INBOUND_RECIPIENT_DOMAINS` limits which receiving domains can create tickets. For this app, set it to `inbound.decent4.com` so mail for another domain or setup is rejected. `ALLOWED_INBOUND_RECIPIENTS` can optionally list exact allowed addresses.
+
 ## Functional surface
 
 - Live Neon-backed dashboard metrics, ticket queue, team load, and incident stream.
@@ -62,8 +64,8 @@ https://<your-vercel-domain>/api/webhooks/inbound-email
 
 4. Secure provider webhooks with either `Authorization: Bearer <INBOUND_WEBHOOK_SECRET>` or `x-webhook-secret: <INBOUND_WEBHOOK_SECRET>`. Resend uses its webhook signing secret instead, so copy that value into `RESEND_WEBHOOK_SECRET`.
 5. Route addresses by mailbox name:
-   - `alerts@...`, `incident@...`, `ops@...`, `noc@...` create `alert_email` tickets.
-   - `support@...`, `client@...`, `help@...`, `ticket@...` create `client_email` tickets.
+   - `alerts@inbound.decent4.com`, `incident@inbound.decent4.com`, `ops@inbound.decent4.com`, `noc@inbound.decent4.com` create `alert_email` tickets.
+   - `support@inbound.decent4.com`, `client@inbound.decent4.com`, `help@inbound.decent4.com`, `ticket@inbound.decent4.com` create `client_email` tickets.
 
 For Resend Inbound, create a receiving domain or use the provided `.resend.app` address, add a webhook for `email.received`, and use a subdomain if the root domain already has production mailbox MX records.
 

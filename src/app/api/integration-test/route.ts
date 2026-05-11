@@ -62,6 +62,22 @@ function getWebhookUrl(value: unknown, requestUrl: string) {
   return url;
 }
 
+function defaultRecipientEmail() {
+  const exactRecipient = text(process.env.ALLOWED_INBOUND_RECIPIENTS)
+    .split(",")
+    .map((entry) => entry.trim())
+    .find(Boolean);
+
+  if (exactRecipient) return exactRecipient;
+
+  const allowedDomain = text(process.env.ALLOWED_INBOUND_RECIPIENT_DOMAINS)
+    .split(",")
+    .map((entry) => entry.trim().replace(/^@/, ""))
+    .find(Boolean);
+
+  return `alerts@${allowedDomain || "inbound.decent4.com"}`;
+}
+
 export async function POST(request: Request) {
   try {
     const payload = (await request.json()) as Record<string, unknown>;
@@ -86,6 +102,7 @@ export async function POST(request: Request) {
       source: "integration-tester",
       id: `test-${randomUUID()}`,
       from: "integration-test@example.com",
+      to: defaultRecipientEmail(),
       subject,
       body: "Smoke test generated from the console integration tester.",
       service: "console-integration",

@@ -509,6 +509,53 @@ function recipientEmails(payload: Record<string, unknown>) {
   return deepFindList(payload, RECIPIENT_KEYS);
 }
 
+function envList(name: string) {
+  return (process.env[name] ?? "")
+    .split(",")
+    .map((entry) => entry.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+function recipientEmailDomain(value: string | null) {
+  if (!value) return null;
+  const email = extractEmailAddress(value);
+  const [, domain] = email.split("@");
+  return domain?.toLowerCase() ?? null;
+}
+
+function rejectDisallowedRecipient(alert: NormalizedAlert) {
+  const allowedRecipients = envList("ALLOWED_INBOUND_RECIPIENTS").map(
+    extractEmailAddress,
+  );
+  const allowedDomains = envList("ALLOWED_INBOUND_RECIPIENT_DOMAINS").map(
+    (domain) => domain.replace(/^@/, ""),
+  );
+
+  if (allowedRecipients.length === 0 && allowedDomains.length === 0) {
+    return null;
+  }
+
+  const recipientEmail = alert.recipientEmail
+    ? extractEmailAddress(alert.recipientEmail)
+    : null;
+  const recipientDomain = recipientEmailDomain(alert.recipientEmail);
+  const isAllowed =
+    (recipientEmail ? allowedRecipients.includes(recipientEmail) : false) ||
+    (recipientDomain ? allowedDomains.includes(recipientDomain) : false);
+
+  if (isAllowed) return null;
+
+  return NextResponse.json(
+    {
+      ok: false,
+      error: "Inbound recipient is not allowed for this app",
+      recipientEmail,
+      allowedDomains,
+    },
+    { status: 403 },
+  );
+}
+
 function classifyEmail(
   payload: Record<string, unknown>,
   subject: string,
@@ -598,13 +645,13 @@ function normalizeAlert(payload: Record<string, unknown>): NormalizedAlert {
           payload.senderEmail,
         ) || deepFindString(payload, FROM_KEYS),
       ) || null,
-    recipientEmail: recipients[0] ?? null,
+    recipientEmail: extractEmailAddress(recipients[0]) || null,
     subject,
     bodyText,
     service: firstText(
       payload.service,
       payload.host,
-      recipients[0]?.split("@")[0],
+      extractEmailAddress(recipients[0])?.split("@")[0],
       "unknown-service",
     ),
     severity: firstText(payload.severity, payload.priority, "unknown"),
@@ -871,6 +918,10 @@ export async function POST(request: Request) {
 
   const rawPayload = await enrichPayload(payload);
   const parsedAlert = normalizeAlert(rawPayload);
+  const disallowedRecipientResponse = rejectDisallowedRecipient(parsedAlert);
+  if (disallowedRecipientResponse) {
+    return disallowedRecipientResponse;
+  }
   logParseDiagnostic(rawPayload, parsedAlert);
   const heuristicScore = scoreAlert(parsedAlert);
 

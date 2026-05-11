@@ -4,7 +4,11 @@ import test from "node:test";
 import { POST } from "./route";
 
 function restoreEnv(
-  key: "INBOUND_WEBHOOK_SECRET" | "RESEND_WEBHOOK_SECRET",
+  key:
+    | "DATABASE_URL"
+    | "INBOUND_WEBHOOK_SECRET"
+    | "OPENAI_API_KEY"
+    | "RESEND_WEBHOOK_SECRET",
   value: string | undefined,
 ) {
   if (value === undefined) {
@@ -63,4 +67,48 @@ test("rejects invalid signed Svix JSON webhook payloads with 400", async (t) => 
   assert.equal(response.status, 400);
   assert.equal(body.ok, false);
   assert.match(String(body.error), /json|unexpected|expected|valid/i);
+});
+
+test("treats high priority immediate email language as P1 without AI", async (t) => {
+  const originalDatabaseUrl = process.env.DATABASE_URL;
+  const originalOpenAiKey = process.env.OPENAI_API_KEY;
+  const originalInboundSecret = process.env.INBOUND_WEBHOOK_SECRET;
+  delete process.env.DATABASE_URL;
+  delete process.env.OPENAI_API_KEY;
+  delete process.env.INBOUND_WEBHOOK_SECRET;
+  t.after(() => {
+    restoreEnv("INBOUND_WEBHOOK_SECRET", originalInboundSecret);
+    if (originalDatabaseUrl === undefined) {
+      delete process.env.DATABASE_URL;
+    } else {
+      process.env.DATABASE_URL = originalDatabaseUrl;
+    }
+    if (originalOpenAiKey === undefined) {
+      delete process.env.OPENAI_API_KEY;
+    } else {
+      process.env.OPENAI_API_KEY = originalOpenAiKey;
+    }
+  });
+
+  const response = await POST(
+    new Request("http://localhost/api/webhooks/inbound-email", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        from: "customer@example.com",
+        to: "alerts@example.com",
+        subject: "High Priority Test",
+        body: "High Priority Test Please Place this in the need to fix immediately.",
+      }),
+    }),
+  );
+  const body = (await response.json()) as {
+    priority?: string;
+    ai?: { usedAi?: boolean; fallbackReason?: string | null };
+  };
+
+  assert.equal(response.status, 202);
+  assert.equal(body.priority, "P1");
+  assert.equal(body.ai?.usedAi, false);
+  assert.equal(body.ai?.fallbackReason, "missing_openai_api_key");
 });

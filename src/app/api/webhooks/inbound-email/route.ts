@@ -652,8 +652,29 @@ function scoreAlert(alert: NormalizedAlert) {
     importanceScore += 15;
   }
 
-  if (textToScore.includes("critical") || textToScore.includes("p1")) {
+  if (
+    textToScore.includes("critical") ||
+    textToScore.includes("p1") ||
+    textToScore.includes("high priority")
+  ) {
     urgencyScore += 20;
+  }
+
+  if (
+    textToScore.includes("high priority") ||
+    textToScore.includes("important")
+  ) {
+    importanceScore += 20;
+  }
+
+  if (
+    textToScore.includes("immediately") ||
+    textToScore.includes("urgent") ||
+    textToScore.includes("asap") ||
+    textToScore.includes("right away") ||
+    textToScore.includes("need to fix")
+  ) {
+    urgencyScore += 25;
   }
 
   if (textToScore.includes("spike") || textToScore.includes("5xx")) {

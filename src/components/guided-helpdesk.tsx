@@ -1357,12 +1357,12 @@ export function SettingsConsole() {
           </p>
         </SetupCard>
 
-        <SetupCard icon={<RadioTower className="h-5 w-5" />} title="Send a test request" helper="Post a synthetic alert to confirm routing before relying on it.">
+        <SetupCard icon={<RadioTower className="h-5 w-5" />} title="Send a test request" helper="Post a synthetic alert with an optional webhook secret or API key.">
           <form onSubmit={submitIntegrationTest} className="grid gap-3 sm:grid-cols-2">
             <div className="sm:col-span-2">
               <TextField labelText="Webhook URL" value={integrationTest.webhookUrl} onChange={(value) => setIntegrationTest((next) => ({ ...next, webhookUrl: value }))} placeholder="/api/webhooks/inbound-email" />
             </div>
-            <TextField labelText="Secret" type="password" value={integrationTest.apiKey} onChange={(value) => setIntegrationTest((next) => ({ ...next, apiKey: value }))} placeholder="Optional" />
+            <TextField labelText="Webhook secret or API key" type="password" value={integrationTest.apiKey} onChange={(value) => setIntegrationTest((next) => ({ ...next, apiKey: value }))} placeholder="Optional" />
             <TextField labelText="Subject" value={integrationTest.subject} onChange={(value) => setIntegrationTest((next) => ({ ...next, subject: value }))} placeholder="Integration smoke alert" />
             <button type="submit" disabled={isPending} className="btn-primary inline-flex h-11 items-center justify-center gap-2 rounded-full px-4 text-sm font-bold disabled:opacity-60 sm:col-span-2">
               <Send className="h-4 w-4" />

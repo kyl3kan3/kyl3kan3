@@ -262,7 +262,11 @@ async function readPayload(request: Request) {
   const contentType = request.headers.get("content-type") ?? "";
 
   if (contentType.includes("application/json")) {
-    return (await request.json()) as Record<string, unknown>;
+    const payload = (await request.json()) as unknown;
+    if (!isRecord(payload)) {
+      throw new Error("Webhook payload must be a JSON object");
+    }
+    return payload;
   }
 
   const formData = await request.formData();
@@ -282,6 +286,27 @@ async function readPayload(request: Request) {
   }
 
   return payload;
+}
+
+function parseRawJsonPayload(rawBody: string) {
+  const payload = JSON.parse(rawBody) as unknown;
+  if (!isRecord(payload)) {
+    throw new Error("Webhook payload must be a JSON object");
+  }
+  return payload;
+}
+
+function badPayloadResponse(error: unknown) {
+  return NextResponse.json(
+    {
+      ok: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Webhook payload must be valid JSON",
+    },
+    { status: 400 },
+  );
 }
 
 function toNumber(value: number | string | null | undefined) {
@@ -803,7 +828,11 @@ export async function POST(request: Request) {
       );
     }
 
-    payload = JSON.parse(rawBody) as Record<string, unknown>;
+    try {
+      payload = parseRawJsonPayload(rawBody);
+    } catch (error) {
+      return badPayloadResponse(error);
+    }
   } else {
     if (!isAuthorized(request)) {
       return NextResponse.json(
@@ -812,7 +841,11 @@ export async function POST(request: Request) {
       );
     }
 
-    payload = await readPayload(request);
+    try {
+      payload = await readPayload(request);
+    } catch (error) {
+      return badPayloadResponse(error);
+    }
   }
 
   const rawPayload = await enrichPayload(payload);

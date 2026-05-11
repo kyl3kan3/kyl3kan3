@@ -231,7 +231,7 @@ export async function createDemoTicket(input: CreateTicketInput) {
     slaDueAt: new Date(now.getTime() + slaMinutes(priority) * 60_000).toISOString(),
     createdAt: now.toISOString(),
     updatedAt: now.toISOString(),
-    createdFrom: "manual",
+    createdFrom: input.createdFrom ?? "manual",
     duplicateCount: 0,
     comments: input.comment
       ? [

@@ -37,6 +37,7 @@ export type CreateTicketInput = {
   reporterEmail?: string | null;
   assignedTeamId?: string | null;
   assignedUserId?: string | null;
+  createdFrom?: string | null;
   comment?: string | null;
 };
 
@@ -249,7 +250,7 @@ export async function createTicket(input: CreateTicketInput) {
       ${input.assignedUserId ?? null},
       now() + (${slaMinutes(priority)} || ' minutes')::interval,
       ${input.reporterEmail ?? null},
-      'manual'
+      ${input.createdFrom ?? "manual"}
     )
     returning id, ticket_number::text
   `) as TicketIdRow[];

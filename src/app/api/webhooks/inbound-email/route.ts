@@ -1,6 +1,12 @@
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
+import {
+  triageIncomingAlert,
+  type AssignmentContext,
+  type AlertTriageDecision,
+} from "@/lib/ai-triage";
 import { getSql, hasDatabaseUrl } from "@/lib/db";
+import { getDemoDashboardData } from "@/lib/demo-store";
 import { createTicket } from "@/lib/operations";
 import type { Priority } from "@/lib/types";
 
@@ -19,7 +25,28 @@ type NormalizedAlert = {
 };
 
 type IdRow = { id: string };
-type TicketIdRow = { id: string; ticket_number: string };
+type TicketIdRow = {
+  id: string;
+  ticket_number: string;
+  assigned_team_id: string | null;
+  assigned_user_id: string | null;
+};
+type TeamAssignmentRow = {
+  id: string;
+  name: string;
+  open_tickets: number | string | null;
+  urgent_tickets: number | string | null;
+  members: number | string | null;
+  on_call: number | string | null;
+};
+type UserAssignmentRow = {
+  id: string;
+  email: string;
+  full_name: string | null;
+  team_ids: string[] | null;
+  is_on_call: boolean | null;
+  open_tickets: number | string | null;
+};
 
 function text(value: unknown, fallback = "") {
   return typeof value === "string" && value.trim().length > 0
@@ -257,6 +284,133 @@ async function readPayload(request: Request) {
   return payload;
 }
 
+function toNumber(value: number | string | null | undefined) {
+  return Number(value ?? 0);
+}
+
+function demoAssignmentContext(): AssignmentContext {
+  const dashboard = getDemoDashboardData();
+  return {
+    teams: dashboard.teams.map((team) => {
+      const load = dashboard.teamLoad.find((item) => item.team === team.name);
+      return {
+        id: team.id,
+        name: team.name,
+        openTickets: load?.openTickets ?? 0,
+        urgentTickets: load?.urgentTickets ?? 0,
+        members: team.members,
+        onCall: team.onCall,
+      };
+    }),
+    users: dashboard.users.map((user) => {
+      const openTickets = dashboard.tickets.filter(
+        (ticket) =>
+          ticket.assignedUserId === user.id &&
+          ticket.status !== "resolved" &&
+          ticket.status !== "closed",
+      ).length;
+      return {
+        id: user.id,
+        email: user.email,
+        fullName: user.fullName,
+        teamIds: user.teamIds,
+        isOnCall: true,
+        openTickets,
+      };
+    }),
+  };
+}
+
+async function ensureDefaultAssignee(orgId: string) {
+  const sql = getSql();
+  const teamRows = (await sql`
+    insert into teams (org_id, name)
+    values (${orgId}, 'General')
+    on conflict (org_id, name) do update set name = excluded.name
+    returning id
+  `) as IdRow[];
+  const userRows = (await sql`
+    insert into users (org_id, email, full_name, role, is_active)
+    values (${orgId}, 'operator@example.com', 'Operations', 'agent', true)
+    on conflict (org_id, email) do update
+      set full_name = excluded.full_name,
+          role = excluded.role,
+          is_active = true
+    returning id
+  `) as IdRow[];
+
+  await sql`
+    insert into team_members (team_id, user_id, is_on_call)
+    values (${teamRows[0].id}, ${userRows[0].id}, true)
+    on conflict (team_id, user_id) do update set is_on_call = true
+  `;
+}
+
+async function assignmentContext(orgId: string): Promise<AssignmentContext> {
+  const sql = getSql();
+  const [teamRows, userRows] = await Promise.all([
+    sql`
+      select
+        tm.id,
+        tm.name,
+        count(t.id) filter (where t.status not in ('resolved', 'closed'))::int as open_tickets,
+        count(t.id) filter (
+          where t.priority in ('P1', 'P2') and t.status not in ('resolved', 'closed')
+        )::int as urgent_tickets,
+        count(distinct team_members.user_id)::int as members,
+        count(distinct team_members.user_id) filter (where team_members.is_on_call)::int as on_call
+      from teams tm
+      left join team_members on team_members.team_id = tm.id
+      left join tickets t on t.assigned_team_id = tm.id
+      where tm.org_id = ${orgId}
+      group by tm.id, tm.name
+      order by open_tickets asc, tm.name asc
+    `,
+    sql`
+      select
+        u.id,
+        u.email,
+        u.full_name,
+        coalesce(array_remove(array_agg(team_members.team_id::text), null), '{}') as team_ids,
+        coalesce(bool_or(team_members.is_on_call), false) as is_on_call,
+        count(t.id) filter (where t.status not in ('resolved', 'closed'))::int as open_tickets
+      from users u
+      left join team_members on team_members.user_id = u.id
+      left join tickets t on t.assigned_user_id = u.id
+      where u.org_id = ${orgId}
+        and u.is_active
+      group by u.id, u.email, u.full_name
+      order by open_tickets asc, u.full_name asc nulls last, u.email asc
+    `,
+  ]);
+
+  let context: AssignmentContext = {
+    teams: (teamRows as TeamAssignmentRow[]).map((team) => ({
+      id: String(team.id),
+      name: team.name,
+      openTickets: toNumber(team.open_tickets),
+      urgentTickets: toNumber(team.urgent_tickets),
+      members: toNumber(team.members),
+      onCall: toNumber(team.on_call),
+    })),
+    users: (userRows as UserAssignmentRow[]).map((user) => ({
+      id: String(user.id),
+      email: user.email,
+      fullName: user.full_name,
+      teamIds: user.team_ids ?? [],
+      isOnCall: Boolean(user.is_on_call),
+      openTickets: toNumber(user.open_tickets),
+    })),
+  };
+
+  if (context.teams.length === 0 || context.users.length === 0) {
+    await ensureDefaultAssignee(orgId);
+    context = await assignmentContext(orgId);
+  }
+
+  return context;
+}
+
 async function enrichPayload(payload: Record<string, unknown>) {
   const eventPayload = unwrapPayload(payload);
   const eventType = text(eventPayload.type);
@@ -433,7 +587,7 @@ function normalizeAlert(payload: Record<string, unknown>): NormalizedAlert {
   };
 }
 
-function fingerprint(alert: NormalizedAlert) {
+function fingerprint(alert: NormalizedAlert, dedupHint = "") {
   const normalizedSubject = alert.subject
     .toLowerCase()
     .replace(/\[[^\]]+\]/g, "")
@@ -441,8 +595,16 @@ function fingerprint(alert: NormalizedAlert) {
     .replace(/\s+/g, " ")
     .trim();
 
+  const normalizedHint = dedupHint
+    .toLowerCase()
+    .replace(/[^a-z0-9\s:_-]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
   return createHash("sha256")
-    .update(`${alert.source}:${alert.service}:${normalizedSubject}`)
+    .update(
+      `${alert.source}:${alert.service}:${normalizedSubject}:${normalizedHint}`,
+    )
     .digest("hex")
     .slice(0, 32);
 }
@@ -581,6 +743,54 @@ function logParseDiagnostic(
   });
 }
 
+async function writeAiTriageAudit({
+  orgId,
+  ticketId,
+  decision,
+  reassignedExistingTicket,
+}: {
+  orgId: string;
+  ticketId: string;
+  decision: AlertTriageDecision;
+  reassignedExistingTicket: boolean;
+}) {
+  const sql = getSql();
+  await sql`
+    insert into audit_logs (
+      org_id,
+      actor_type,
+      entity_type,
+      entity_id,
+      action,
+      metadata
+    )
+    values (
+      ${orgId},
+      'system',
+      'ticket',
+      ${ticketId},
+      'ai.triaged',
+      ${JSON.stringify({
+        model: decision.model,
+        usedAi: decision.usedAi,
+        fallbackReason: decision.fallbackReason,
+        confidence: decision.confidence,
+        priority: decision.priority,
+        importanceScore: decision.importanceScore,
+        urgencyScore: decision.urgencyScore,
+        assignedTeamId: decision.assignedTeamId,
+        assignedUserId: decision.assignedUserId,
+        createdFrom: decision.createdFrom,
+        service: decision.service,
+        severity: decision.severity,
+        dedupHint: decision.dedupHint,
+        reasoning: decision.reasoning,
+        reassignedExistingTicket,
+      })}::jsonb
+    )
+  `;
+}
+
 export async function POST(request: Request) {
   let payload: Record<string, unknown>;
 
@@ -606,18 +816,37 @@ export async function POST(request: Request) {
   }
 
   const rawPayload = await enrichPayload(payload);
-  const alert = normalizeAlert(rawPayload);
-  logParseDiagnostic(rawPayload, alert);
-  const alertFingerprint = fingerprint(alert);
-  const score = scoreAlert(alert);
+  const parsedAlert = normalizeAlert(rawPayload);
+  logParseDiagnostic(rawPayload, parsedAlert);
+  const heuristicScore = scoreAlert(parsedAlert);
 
   if (!hasDatabaseUrl()) {
+    const decision = await triageIncomingAlert({
+      alert: parsedAlert,
+      rawPayload,
+      heuristicScore,
+      context: demoAssignmentContext(),
+    });
+    const alertFingerprint = fingerprint(
+      {
+        ...parsedAlert,
+        subject: decision.title,
+        bodyText: decision.summary,
+        service: decision.service,
+        severity: decision.severity,
+        createdFrom: decision.createdFrom,
+      },
+      decision.dedupHint,
+    );
     const ticket = await createTicket({
-      title: alert.subject,
-      description: alert.bodyText,
-      priority: score.priority,
-      reporterEmail: alert.senderEmail,
-      comment: `Demo webhook intake from ${alert.source}.`,
+      title: decision.title,
+      description: decision.summary,
+      priority: decision.priority,
+      reporterEmail: parsedAlert.senderEmail,
+      assignedTeamId: decision.assignedTeamId || null,
+      assignedUserId: decision.assignedUserId || null,
+      createdFrom: decision.createdFrom,
+      comment: `Demo webhook intake from ${parsedAlert.source}. ${decision.reasoning}`,
     });
 
     return NextResponse.json(
@@ -628,10 +857,18 @@ export async function POST(request: Request) {
         incidentId: null,
         ticketId: ticket.id,
         ticketNumber: ticket.ticket_number,
-        priority: score.priority,
-        createdFrom: alert.createdFrom,
-        recipientEmail: alert.recipientEmail,
+        priority: decision.priority,
+        assignedTeamId: decision.assignedTeamId,
+        assignedUserId: decision.assignedUserId,
+        createdFrom: decision.createdFrom,
+        recipientEmail: parsedAlert.recipientEmail,
         fingerprint: alertFingerprint,
+        ai: {
+          usedAi: decision.usedAi,
+          model: decision.model,
+          confidence: decision.confidence,
+          fallbackReason: decision.fallbackReason,
+        },
       },
       { status: 202 },
     );
@@ -646,6 +883,26 @@ export async function POST(request: Request) {
     returning id
   `) as IdRow[];
   const orgId = String(orgRows[0].id);
+  const decision = await triageIncomingAlert({
+    alert: parsedAlert,
+    rawPayload,
+    heuristicScore,
+    context: await assignmentContext(orgId),
+  });
+  const alert: NormalizedAlert = {
+    ...parsedAlert,
+    subject: decision.title,
+    bodyText: decision.summary,
+    service: decision.service,
+    severity: decision.severity,
+    createdFrom: decision.createdFrom,
+  };
+  const score = {
+    priority: decision.priority,
+    importanceScore: decision.importanceScore,
+    urgencyScore: decision.urgencyScore,
+  };
+  const alertFingerprint = fingerprint(alert, decision.dedupHint);
 
   const alertRows = (await sql`
     insert into alert_events (
@@ -738,7 +995,11 @@ export async function POST(request: Request) {
   `;
 
   const existingTicketRows = (await sql`
-    select id, ticket_number::text
+    select
+      id,
+      ticket_number::text,
+      assigned_team_id::text,
+      assigned_user_id::text
     from tickets
     where incident_id = ${incidentId}
       and status not in ('resolved', 'closed')
@@ -746,12 +1007,12 @@ export async function POST(request: Request) {
     limit 1
   `) as TicketIdRow[];
 
-  let ticketId = existingTicketRows[0]?.id
-    ? String(existingTicketRows[0].id)
+  const existingTicket = existingTicketRows[0] ?? null;
+  let ticketId = existingTicket?.id ? String(existingTicket.id) : null;
+  let ticketNumber = existingTicket?.ticket_number
+    ? String(existingTicket.ticket_number)
     : null;
-  let ticketNumber = existingTicketRows[0]?.ticket_number
-    ? String(existingTicketRows[0].ticket_number)
-    : null;
+  let reassignedExistingTicket = false;
 
   if (ticketId) {
     await sql`
@@ -763,6 +1024,28 @@ export async function POST(request: Request) {
         importance_score = greatest(importance_score, ${score.importanceScore})
       where id = ${ticketId}
     `;
+
+    const shouldReassign =
+      !existingTicket?.assigned_team_id ||
+      !existingTicket.assigned_user_id ||
+      decision.confidence >= 0.75;
+
+    if (shouldReassign && decision.assignedTeamId && decision.assignedUserId) {
+      await sql`
+        update tickets
+        set
+          assigned_team_id = ${decision.assignedTeamId},
+          assigned_user_id = ${decision.assignedUserId},
+          status = case
+            when status = 'new' then 'assigned'
+            else status
+          end
+        where id = ${ticketId}
+      `;
+      reassignedExistingTicket =
+        existingTicket?.assigned_team_id !== decision.assignedTeamId ||
+        existingTicket?.assigned_user_id !== decision.assignedUserId;
+    }
 
     if (alert.createdFrom === "client_email" && alert.bodyText) {
       await sql`
@@ -791,6 +1074,8 @@ export async function POST(request: Request) {
         priority,
         importance_score,
         urgency_score,
+        assigned_team_id,
+        assigned_user_id,
         sla_due_at,
         reporter_email,
         created_from
@@ -800,19 +1085,32 @@ export async function POST(request: Request) {
         ${incidentId},
         ${alert.subject},
         ${alert.bodyText},
-        'new',
+        'assigned',
         ${score.priority},
         ${score.importanceScore},
         ${score.urgencyScore},
+        ${decision.assignedTeamId || null},
+        ${decision.assignedUserId || null},
         now() + (${slaMinutes(score.priority)} || ' minutes')::interval,
         ${alert.senderEmail},
         ${alert.createdFrom}
       )
-      returning id, ticket_number::text
+      returning
+        id,
+        ticket_number::text,
+        assigned_team_id::text,
+        assigned_user_id::text
     `) as TicketIdRow[];
     ticketId = String(ticketRows[0].id);
     ticketNumber = String(ticketRows[0].ticket_number);
   }
+
+  await writeAiTriageAudit({
+    orgId,
+    ticketId,
+    decision,
+    reassignedExistingTicket,
+  });
 
   return NextResponse.json(
     {
@@ -822,9 +1120,17 @@ export async function POST(request: Request) {
       ticketId,
       ticketNumber,
       priority: score.priority,
+      assignedTeamId: decision.assignedTeamId,
+      assignedUserId: decision.assignedUserId,
       createdFrom: alert.createdFrom,
       recipientEmail: alert.recipientEmail,
       fingerprint: alertFingerprint,
+      ai: {
+        usedAi: decision.usedAi,
+        model: decision.model,
+        confidence: decision.confidence,
+        fallbackReason: decision.fallbackReason,
+      },
     },
     { status: 202 },
   );

@@ -836,6 +836,10 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
   const breachedTickets = data.tickets.filter((ticket) =>
     isBreachedTicket(ticket, nowMs),
   ).length;
+  const p1Tickets = data.tickets.filter(
+    (ticket) => ticket.priority === "P1" && isActive(ticket),
+  ).length;
+  const avgAge = data.metrics.find((metric) => metric.key === "avgAge")?.value;
 
   function resetFilters() {
     setQuery("");
@@ -843,33 +847,6 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
     setStatusFilter("active");
     setTeamFilter("all");
     setShowBreachedOnly(false);
-  }
-
-  function activateMetric(metricKey: OpsMetric["key"]) {
-    if (metricKey === "openTickets") {
-      resetFilters();
-    }
-
-    if (metricKey === "p1Incidents") {
-      setQuery("");
-      setPriorityFilter("P1");
-      setStatusFilter("active");
-      setTeamFilter("all");
-      setShowBreachedOnly(false);
-    }
-
-    if (metricKey === "slaBreaches") {
-      setQuery("");
-      setPriorityFilter("all");
-      setStatusFilter("active");
-      setTeamFilter("all");
-      setShowBreachedOnly(true);
-    }
-
-    if (metricKey === "avgAge") {
-      setStatusFilter("active");
-      setShowBreachedOnly(false);
-    }
   }
 
   const filteredTickets = useMemo(() => {
@@ -943,91 +920,12 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
         }
       />
 
-      <section className="mx-auto max-w-[1240px] px-4 py-6 sm:px-6">
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          {data.metrics.map((metric) => (
-            <MetricCard
-              key={metric.key}
-              metric={
-                metric.key === "slaBreaches"
-                  ? { ...metric, value: String(breachedTickets) }
-                  : metric
-              }
-              active={
-                (metric.key === "openTickets" &&
-                  statusFilter === "active" &&
-                  priorityFilter === "all" &&
-                  teamFilter === "all" &&
-                  !showBreachedOnly &&
-                  !query) ||
-                (metric.key === "p1Incidents" &&
-                  priorityFilter === "P1" &&
-                  !showBreachedOnly) ||
-                (metric.key === "slaBreaches" && showBreachedOnly)
-              }
-              onActivate={() => activateMetric(metric.key)}
-            />
-          ))}
-        </div>
-
-        {data.teamLoad.length > 0 ? (
-          <div className="fancy-scroll mt-4 flex gap-2 overflow-x-auto pb-1">
-            {data.teamLoad.map((team) => {
-              const teamOption = data.teams.find(
-                (item) => item.name === team.team,
-              );
-              const isActiveFilter = teamOption
-                ? teamFilter === teamOption.id
-                : false;
-              return (
-                <button
-                  key={team.team}
-                  type="button"
-                  disabled={!teamOption}
-                  onClick={() => {
-                    if (!teamOption) return;
-                    setTeamFilter(isActiveFilter ? "all" : teamOption.id);
-                    setStatusFilter("active");
-                    setPriorityFilter("all");
-                    setShowBreachedOnly(false);
-                  }}
-                  className={`shrink-0 rounded-xl border px-3 py-2 text-left transition disabled:opacity-60 ${
-                    isActiveFilter
-                      ? "border-stone-900 bg-stone-900 text-white"
-                      : "border-stone-200 bg-white text-stone-900 hover:border-stone-300"
-                  }`}
-                >
-                  <div className="flex items-center gap-2 text-[12.5px] font-semibold tracking-tight">
-                    <Users className="h-3.5 w-3.5 opacity-70" />
-                    {team.team}
-                  </div>
-                  <div className="mt-1 flex items-center gap-2 text-[11px]">
-                    <span className="tabular-nums opacity-80">
-                      {team.openTickets} open
-                    </span>
-                    {team.urgentTickets > 0 ? (
-                      <span
-                        className={`rounded px-1.5 py-0.5 font-semibold tabular-nums ${
-                          isActiveFilter
-                            ? "bg-red-300/20 text-red-100"
-                            : "bg-red-50 text-red-700"
-                        }`}
-                      >
-                        {team.urgentTickets} urgent
-                      </span>
-                    ) : null}
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        ) : null}
-
-        <section className="surface-card mt-6 overflow-hidden">
+      <section className="mx-auto max-w-[980px] px-4 py-6 sm:px-6">
+        <section className="surface-card overflow-hidden">
           <div className="border-b border-stone-200/70 bg-gradient-to-b from-stone-50 to-white p-5">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex min-w-0 items-center gap-3">
-                <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-stone-900 to-stone-700 text-white shadow-md ring-1 ring-black/10">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-stone-900 to-stone-700 text-white shadow-md ring-1 ring-black/10">
                   <Inbox className="h-5 w-5" />
                 </div>
                 <div className="min-w-0">
@@ -1044,9 +942,67 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
                   </p>
                 </div>
               </div>
-              <span className="rounded-full border border-stone-200 bg-white px-2.5 py-1 text-[11px] font-semibold tabular-nums text-stone-600 shadow-sm">
-                {filteredTickets.length} shown
-              </span>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="rounded-full border border-stone-200 bg-white px-2.5 py-1 text-[11px] font-semibold tabular-nums text-stone-600 shadow-sm">
+                  {filteredTickets.length} shown
+                </span>
+                <Link
+                  href="/overview"
+                  className="rounded-full border border-stone-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-stone-600 shadow-sm transition hover:text-stone-950"
+                >
+                  Overview
+                </Link>
+              </div>
+            </div>
+            <div className="mt-4 grid gap-2 border-y border-stone-200/70 py-3 text-[12px] sm:grid-cols-4">
+              <button
+                type="button"
+                onClick={resetFilters}
+                className="rounded-lg bg-white px-3 py-2 text-left font-semibold text-stone-700 ring-1 ring-stone-200 transition hover:bg-stone-50"
+              >
+                <span className="block text-[10px] uppercase tracking-[0.08em] text-stone-400">
+                  Active
+                </span>
+                <span className="tabular-nums">{activeTickets}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setQuery("");
+                  setPriorityFilter("P1");
+                  setStatusFilter("active");
+                  setTeamFilter("all");
+                  setShowBreachedOnly(false);
+                }}
+                className="rounded-lg bg-white px-3 py-2 text-left font-semibold text-red-700 ring-1 ring-red-100 transition hover:bg-red-50"
+              >
+                <span className="block text-[10px] uppercase tracking-[0.08em] text-red-400">
+                  P1
+                </span>
+                <span className="tabular-nums">{p1Tickets}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setQuery("");
+                  setPriorityFilter("all");
+                  setStatusFilter("active");
+                  setTeamFilter("all");
+                  setShowBreachedOnly(true);
+                }}
+                className="rounded-lg bg-white px-3 py-2 text-left font-semibold text-amber-700 ring-1 ring-amber-100 transition hover:bg-amber-50"
+              >
+                <span className="block text-[10px] uppercase tracking-[0.08em] text-amber-500">
+                  Breaches
+                </span>
+                <span className="tabular-nums">{breachedTickets}</span>
+              </button>
+              <div className="rounded-lg bg-white px-3 py-2 font-semibold text-emerald-700 ring-1 ring-emerald-100">
+                <span className="block text-[10px] uppercase tracking-[0.08em] text-emerald-500">
+                  Avg age
+                </span>
+                <span className="tabular-nums">{avgAge ?? "0m"}</span>
+              </div>
             </div>
             <div className="relative mt-4">
               <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-stone-400" />
@@ -1057,7 +1013,7 @@ export function TriageConsole({ initialData }: { initialData: DashboardData }) {
                 className="input-field h-10 w-full min-w-0 pl-9 pr-3 text-sm text-stone-900 placeholder:text-stone-400"
               />
             </div>
-            <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_1fr_1fr_auto]">
               <SelectField
                 labelText="Status"
                 value={statusFilter}

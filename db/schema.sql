@@ -87,8 +87,49 @@ create table if not exists tickets (
   sla_due_at timestamptz,
   reporter_email text,
   created_from text not null default 'alert_email',
+  repairshopr_ticket_id text,
+  repairshopr_ticket_number text,
+  repairshopr_customer_id text,
+  repairshopr_status text,
+  repairshopr_url text,
+  repairshopr_updated_at timestamptz,
+  repairshopr_payload jsonb,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
+);
+
+create table if not exists repairshopr_customers (
+  id uuid primary key default gen_random_uuid(),
+  org_id uuid not null references orgs(id) on delete cascade,
+  repairshopr_customer_id text not null,
+  name text,
+  email text,
+  phone text,
+  remote_updated_at timestamptz,
+  raw_payload jsonb not null,
+  last_synced_at timestamptz not null default now(),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique(org_id, repairshopr_customer_id)
+);
+
+create table if not exists repairshopr_sync_runs (
+  id uuid primary key default gen_random_uuid(),
+  org_id uuid references orgs(id) on delete cascade,
+  started_at timestamptz not null default now(),
+  finished_at timestamptz,
+  status text not null check (status in ('running','success','error')),
+  customers_synced int not null default 0,
+  tickets_synced int not null default 0,
+  error text,
+  cursor_updated_at timestamptz
+);
+
+create table if not exists repairshopr_sync_locks (
+  org_id uuid primary key references orgs(id) on delete cascade,
+  lock_token uuid not null,
+  acquired_at timestamptz not null default now(),
+  expires_at timestamptz not null
 );
 
 create table if not exists ticket_comments (
@@ -125,12 +166,29 @@ create table if not exists audit_logs (
   created_at timestamptz not null default now()
 );
 
+-- Keep this file safe to reapply to databases created before RepairShopr support.
+alter table tickets add column if not exists repairshopr_ticket_id text;
+alter table tickets add column if not exists repairshopr_ticket_number text;
+alter table tickets add column if not exists repairshopr_customer_id text;
+alter table tickets add column if not exists repairshopr_status text;
+alter table tickets add column if not exists repairshopr_url text;
+alter table tickets add column if not exists repairshopr_updated_at timestamptz;
+alter table tickets add column if not exists repairshopr_payload jsonb;
+
 create index if not exists alert_events_org_received_idx on alert_events(org_id, received_at desc);
 create index if not exists alert_events_fingerprint_idx on alert_events(org_id, fingerprint);
 create index if not exists incidents_org_priority_idx on incidents(org_id, priority, updated_at desc);
 create index if not exists incidents_org_dedup_idx on incidents(org_id, dedup_key);
 create index if not exists tickets_org_status_idx on tickets(org_id, status, updated_at desc);
 create index if not exists tickets_org_priority_idx on tickets(org_id, priority, updated_at desc);
+create unique index if not exists tickets_org_repairshopr_ticket_idx
+  on tickets(org_id, repairshopr_ticket_id)
+  where repairshopr_ticket_id is not null;
+create index if not exists tickets_org_repairshopr_customer_idx
+  on tickets(org_id, repairshopr_customer_id)
+  where repairshopr_customer_id is not null;
+create index if not exists repairshopr_sync_runs_started_idx
+  on repairshopr_sync_runs(started_at desc);
 
 create or replace function touch_updated_at()
 returns trigger
@@ -150,6 +208,11 @@ for each row execute function touch_updated_at();
 drop trigger if exists tickets_touch_updated_at on tickets;
 create trigger tickets_touch_updated_at
 before update on tickets
+for each row execute function touch_updated_at();
+
+drop trigger if exists repairshopr_customers_touch_updated_at on repairshopr_customers;
+create trigger repairshopr_customers_touch_updated_at
+before update on repairshopr_customers
 for each row execute function touch_updated_at();
 
 with org as (

@@ -9,7 +9,10 @@ export const metadata: Metadata = {
 };
 
 export default async function OverviewPage() {
-  const dashboard = await getDashboardData();
+  const dashboard = await getDashboardData({
+    ticketScope: "active",
+    ticketLimit: 50,
+  });
 
   return <OverviewConsole initialData={dashboard} />;
 }

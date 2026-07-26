@@ -8,6 +8,21 @@ export function getMockDashboardData(dbError?: string): DashboardData {
   return {
     source: "demo",
     refreshedAt: new Date().toISOString(),
+    ticketCounts: {
+      active: 4,
+      archived: 0,
+      urgent: 3,
+      needsAttention: 4,
+      waiting: 0,
+      breached: 1,
+      resolved: 0,
+      closed: 0,
+    },
+    ticketPage: {
+      limit: 4,
+      offset: 0,
+      hasMore: false,
+    },
     dbError,
     metrics: [
       {

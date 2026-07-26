@@ -5,21 +5,22 @@ import { getDashboardData } from "@/lib/dashboard";
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: "Open Tickets - Alert Triage",
+  title: "Archive - Alert Triage",
 };
 
-export default async function TicketsPage() {
+export default async function ArchivePage() {
   const dashboard = await getDashboardData({
-    ticketScope: "active",
+    ticketScope: "archive",
     ticketLimit: 100,
   });
 
   return (
     <TriageConsole
       initialData={dashboard}
-      active="tickets"
-      title="Open tickets"
-      subtitle="Tickets"
+      active="archive"
+      title="Done archive"
+      subtitle="Archive"
+      mode="archive"
     />
   );
 }

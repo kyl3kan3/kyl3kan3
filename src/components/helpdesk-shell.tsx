@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Archive,
   Bell,
   Home,
   Inbox,
@@ -11,11 +12,12 @@ import {
 import Link from "next/link";
 import type { ReactNode } from "react";
 
-export type ShellSection = "home" | "tickets" | "overview" | "settings";
+export type ShellSection = "home" | "tickets" | "archive" | "overview" | "settings";
 
 const navItems = [
   { href: "/", label: "Home", key: "home" as const, icon: Home },
   { href: "/tickets", label: "Tickets", key: "tickets" as const, icon: Inbox },
+  { href: "/archive", label: "Archive", key: "archive" as const, icon: Archive },
   {
     href: "/overview",
     label: "Overview",

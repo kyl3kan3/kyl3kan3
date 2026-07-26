@@ -1,16 +1,24 @@
 import { getSql, hasDatabaseUrl } from "./db";
 import { getDemoDashboardData } from "./demo-store";
+import { ensureRepairShoprSchema, getRepairShoprStatus } from "./repairshopr";
 import type {
   DashboardData,
   IncidentSnapshot,
   Priority,
   TicketComment,
+  TicketQueueItem,
   TicketStatus,
   UserOption,
 } from "./types";
 
 type MetricsRow = {
   open_tickets: number | string | null;
+  archived_tickets: number | string | null;
+  urgent_tickets: number | string | null;
+  needs_attention: number | string | null;
+  waiting_tickets: number | string | null;
+  resolved_tickets: number | string | null;
+  closed_tickets: number | string | null;
   p1_open: number | string | null;
   breached: number | string | null;
   avg_age_minutes: number | string | null;
@@ -35,7 +43,14 @@ type TicketRow = {
   created_at: string;
   updated_at: string;
   created_from: string;
+  repairshopr_url: string | null;
+  repairshopr_status: string | null;
+  repairshopr_customer_name: string | null;
   duplicate_count: number | string | null;
+};
+
+type HighlightTicketRow = TicketRow & {
+  highlight_kind: "urgent" | "breached" | "recent";
 };
 
 type CommentRow = {
@@ -90,17 +105,102 @@ function toPriority(value: string): Priority {
   return "P4";
 }
 
-export async function getDashboardData(): Promise<DashboardData> {
+const priorityRank: Record<Priority, number> = {
+  P1: 1,
+  P2: 2,
+  P3: 3,
+  P4: 4,
+};
+
+function mapTicketRow(
+  ticket: TicketRow,
+  comments: TicketComment[] = [],
+): TicketQueueItem {
+  return {
+    id: ticket.id,
+    incidentId: ticket.incident_id,
+    ticketNumber: ticket.ticket_number,
+    title: ticket.title,
+    description: ticket.description,
+    status: ticket.status,
+    priority: toPriority(ticket.priority),
+    importanceScore: toNumber(ticket.importance_score),
+    urgencyScore: toNumber(ticket.urgency_score),
+    assignedUserId: ticket.assigned_user_id,
+    assignedTeamId: ticket.assigned_team_id,
+    assignee: ticket.assignee ?? "Unassigned",
+    team: ticket.team ?? "Unrouted",
+    reporterEmail: ticket.reporter_email,
+    customerName: ticket.repairshopr_customer_name,
+    slaDueAt: ticket.sla_due_at,
+    createdAt: ticket.created_at,
+    updatedAt: ticket.updated_at,
+    createdFrom: ticket.created_from,
+    repairshoprUrl: ticket.repairshopr_url,
+    repairshoprStatus: ticket.repairshopr_status,
+    duplicateCount: toNumber(ticket.duplicate_count),
+    comments,
+  };
+}
+
+export type DashboardTicketScope = "mixed" | "active" | "archive";
+
+export type DashboardOptions = {
+  ticketScope?: DashboardTicketScope;
+  ticketId?: string | null;
+  ticketLimit?: number;
+  ticketOffset?: number;
+};
+
+export async function getDashboardData(
+  options: DashboardOptions = {},
+): Promise<DashboardData> {
+  const ticketScope = options.ticketScope ?? "mixed";
+  const ticketId = options.ticketId?.trim() ?? "";
+  const requestedLimit = Number.isFinite(options.ticketLimit)
+    ? Math.trunc(options.ticketLimit ?? 50)
+    : 50;
+  const requestedOffset = Number.isFinite(options.ticketOffset)
+    ? Math.trunc(options.ticketOffset ?? 0)
+    : 0;
+  const ticketLimit = ticketId ? 1 : Math.min(200, Math.max(1, requestedLimit));
+  const ticketOffset = ticketId ? 0 : Math.max(0, requestedOffset);
+
   if (!hasDatabaseUrl()) {
-    return getDemoDashboardData();
+    const dashboard = getDemoDashboardData();
+    const scopedTickets = dashboard.tickets.filter((ticket) => {
+      if (ticketId) return ticket.id === ticketId;
+      if (ticketScope === "active") {
+        return ticket.status !== "resolved" && ticket.status !== "closed";
+      }
+      if (ticketScope === "archive") {
+        return ticket.status === "resolved" || ticket.status === "closed";
+      }
+      return true;
+    });
+    const tickets = scopedTickets.slice(
+      ticketOffset,
+      ticketOffset + ticketLimit,
+    );
+    return {
+      ...dashboard,
+      tickets,
+      ticketPage: {
+        limit: ticketLimit,
+        offset: ticketOffset,
+        hasMore: ticketOffset + tickets.length < scopedTickets.length,
+      },
+    };
   }
 
   try {
     const sql = getSql();
+    await ensureRepairShoprSchema();
 
     const [
       metricsRows,
       ticketRows,
+      highlightRows,
       commentRows,
       incidentRows,
       teamRows,
@@ -109,6 +209,23 @@ export async function getDashboardData(): Promise<DashboardData> {
       sql`
         select
           count(*) filter (where status not in ('resolved', 'closed'))::int as open_tickets,
+          count(*) filter (where status in ('resolved', 'closed'))::int as archived_tickets,
+          count(*) filter (
+            where priority in ('P1', 'P2')
+              and status not in ('resolved', 'closed')
+          )::int as urgent_tickets,
+          count(*) filter (
+            where status not in ('resolved', 'closed', 'waiting')
+              and (
+                priority in ('P1', 'P2')
+                or status = 'new'
+                or assigned_user_id is null
+                or (sla_due_at is not null and sla_due_at < now())
+              )
+          )::int as needs_attention,
+          count(*) filter (where status = 'waiting')::int as waiting_tickets,
+          count(*) filter (where status = 'resolved')::int as resolved_tickets,
+          count(*) filter (where status = 'closed')::int as closed_tickets,
           count(*) filter (where priority = 'P1' and status not in ('resolved', 'closed'))::int as p1_open,
           count(*) filter (
             where sla_due_at is not null
@@ -126,7 +243,7 @@ export async function getDashboardData(): Promise<DashboardData> {
         select
           t.id,
           t.incident_id,
-          t.ticket_number::text as ticket_number,
+          coalesce(t.repairshopr_ticket_number, t.ticket_number::text) as ticket_number,
           t.title,
           t.description,
           t.status,
@@ -137,20 +254,41 @@ export async function getDashboardData(): Promise<DashboardData> {
           t.assigned_team_id,
           coalesce(u.full_name, u.email, 'Unassigned') as assignee,
           coalesce(tm.name, 'Unrouted') as team,
-          t.reporter_email,
+          coalesce(rc.email, t.reporter_email) as reporter_email,
           t.sla_due_at::text,
           t.created_at::text,
-          t.updated_at::text,
+          greatest(
+            t.updated_at,
+            coalesce(t.repairshopr_updated_at, '-infinity'::timestamptz)
+          )::text as updated_at,
           t.created_from,
+          t.repairshopr_url,
+          t.repairshopr_status,
+          rc.name as repairshopr_customer_name,
           coalesce(count(ial.alert_event_id), 0)::int as duplicate_count
         from tickets t
         left join users u on u.id = t.assigned_user_id
         left join teams tm on tm.id = t.assigned_team_id
+        left join repairshopr_customers rc
+          on rc.org_id = t.org_id
+         and rc.repairshopr_customer_id = t.repairshopr_customer_id
         left join incident_alert_links ial on ial.incident_id = t.incident_id
+        where (
+          (${ticketId} <> '' and t.id::text = ${ticketId})
+          or (
+            ${ticketId} = ''
+            and (
+              ${ticketScope} = 'mixed'
+              or (${ticketScope} = 'active' and t.status not in ('resolved', 'closed'))
+              or (${ticketScope} = 'archive' and t.status in ('resolved', 'closed'))
+            )
+          )
+        )
         group by
           t.id,
           t.incident_id,
           t.ticket_number,
+          t.repairshopr_ticket_number,
           t.title,
           t.description,
           t.status,
@@ -166,14 +304,156 @@ export async function getDashboardData(): Promise<DashboardData> {
           t.sla_due_at,
           t.created_at,
           t.updated_at,
-          t.created_from
+          t.repairshopr_updated_at,
+          t.created_from,
+          t.repairshopr_url,
+          t.repairshopr_status,
+          rc.name,
+          rc.email
         order by
-          case when t.status in ('resolved', 'closed') then 2 else 1 end,
-          case t.priority when 'P1' then 1 when 'P2' then 2 when 'P3' then 3 else 4 end,
-          t.updated_at desc
-        limit 50
+          case
+            when ${ticketScope} <> 'archive' and t.status in ('resolved', 'closed') then 2
+            else 1
+          end,
+          case
+            when ${ticketScope} = 'archive' then null
+            when t.priority = 'P1' then 1
+            when t.priority = 'P2' then 2
+            when t.priority = 'P3' then 3
+            else 4
+          end,
+          greatest(
+            t.updated_at,
+            coalesce(t.repairshopr_updated_at, '-infinity'::timestamptz)
+          ) desc,
+          t.id
+        limit ${ticketLimit}
+        offset ${ticketOffset}
       `,
       sql`
+        with ticket_base as (
+          select
+            t.id,
+            t.incident_id,
+            coalesce(t.repairshopr_ticket_number, t.ticket_number::text) as ticket_number,
+            t.title,
+            t.description,
+            t.status,
+            t.priority,
+            t.importance_score,
+            t.urgency_score,
+            t.assigned_user_id,
+            t.assigned_team_id,
+            coalesce(u.full_name, u.email, 'Unassigned') as assignee,
+            coalesce(tm.name, 'Unrouted') as team,
+            coalesce(rc.email, t.reporter_email) as reporter_email,
+            t.sla_due_at::text,
+            t.created_at::text,
+            greatest(
+              t.updated_at,
+              coalesce(t.repairshopr_updated_at, '-infinity'::timestamptz)
+            )::text as updated_at,
+            greatest(
+              t.updated_at,
+              coalesce(t.repairshopr_updated_at, '-infinity'::timestamptz)
+            ) as updated_at_sort,
+            t.created_from,
+            t.repairshopr_url,
+            t.repairshopr_status,
+            rc.name as repairshopr_customer_name,
+            0::int as duplicate_count
+          from tickets t
+          left join users u on u.id = t.assigned_user_id
+          left join teams tm on tm.id = t.assigned_team_id
+          left join repairshopr_customers rc
+            on rc.org_id = t.org_id
+           and rc.repairshopr_customer_id = t.repairshopr_customer_id
+        ),
+        urgent_tickets as (
+          select *
+          from ticket_base
+          where status not in ('resolved', 'closed')
+            and priority in ('P1', 'P2')
+          order by
+            case priority when 'P1' then 1 else 2 end,
+            updated_at_sort desc,
+            id
+          limit 4
+        ),
+        breached_tickets as (
+          select *
+          from ticket_base
+          where status not in ('resolved', 'closed')
+            and sla_due_at::timestamptz < now()
+          order by sla_due_at::timestamptz asc, id
+          limit 5
+        ),
+        recent_tickets as (
+          select *
+          from ticket_base
+          where status not in ('resolved', 'closed')
+          order by updated_at_sort desc, id
+          limit 8
+        )
+        select 'urgent'::text as highlight_kind, urgent_tickets.*
+        from urgent_tickets
+        union all
+        select 'breached'::text as highlight_kind, breached_tickets.*
+        from breached_tickets
+        union all
+        select 'recent'::text as highlight_kind, recent_tickets.*
+        from recent_tickets
+      `,
+      sql`
+        with selected_tickets as (
+          select t.id
+          from tickets t
+          where (
+            (${ticketId} <> '' and t.id::text = ${ticketId})
+            or (
+              ${ticketId} = ''
+              and (
+                ${ticketScope} = 'mixed'
+                or (${ticketScope} = 'active' and t.status not in ('resolved', 'closed'))
+                or (${ticketScope} = 'archive' and t.status in ('resolved', 'closed'))
+              )
+            )
+          )
+          order by
+            case
+              when ${ticketScope} <> 'archive' and t.status in ('resolved', 'closed') then 2
+              else 1
+            end,
+            case
+              when ${ticketScope} = 'archive' then null
+              when t.priority = 'P1' then 1
+              when t.priority = 'P2' then 2
+              when t.priority = 'P3' then 3
+              else 4
+            end,
+            greatest(
+              t.updated_at,
+              coalesce(t.repairshopr_updated_at, '-infinity'::timestamptz)
+            ) desc,
+            t.id
+          limit ${ticketLimit}
+          offset ${ticketOffset}
+        ),
+        ranked_comments as (
+          select
+            c.id,
+            c.ticket_id,
+            c.author_email,
+            c.body,
+            c.created_via,
+            c.created_at,
+            row_number() over (
+              partition by c.ticket_id
+              order by c.created_at desc, c.id desc
+            ) as comment_rank
+          from ticket_comments c
+          join selected_tickets selected on selected.id = c.ticket_id
+        )
         select
           id,
           ticket_id,
@@ -181,9 +461,9 @@ export async function getDashboardData(): Promise<DashboardData> {
           body,
           created_via,
           created_at::text
-        from ticket_comments
-        order by created_at asc
-        limit 500
+        from ranked_comments
+        where comment_rank <= 100
+        order by created_at asc, id asc
       `,
       sql`
         select
@@ -238,10 +518,18 @@ export async function getDashboardData(): Promise<DashboardData> {
 
     const metrics = (metricsRows as MetricsRow[])[0] ?? {
       open_tickets: 0,
+      archived_tickets: 0,
+      urgent_tickets: 0,
+      needs_attention: 0,
+      waiting_tickets: 0,
+      resolved_tickets: 0,
+      closed_tickets: 0,
       p1_open: 0,
       breached: 0,
       avg_age_minutes: 0,
     };
+    const typedTicketRows = ticketRows as TicketRow[];
+    const typedHighlightRows = highlightRows as HighlightTicketRow[];
 
     const commentsByTicket = new Map<string, TicketComment[]>();
     for (const comment of commentRows as CommentRow[]) {
@@ -257,9 +545,73 @@ export async function getDashboardData(): Promise<DashboardData> {
       commentsByTicket.set(comment.ticket_id, comments);
     }
 
+    const repairshoprStatus = await getRepairShoprStatus();
+
     return {
       source: "database",
       refreshedAt: new Date().toISOString(),
+      ticketCounts: {
+        active: toNumber(metrics.open_tickets),
+        archived: toNumber(metrics.archived_tickets),
+        urgent: toNumber(metrics.urgent_tickets),
+        needsAttention: toNumber(metrics.needs_attention),
+        waiting: toNumber(metrics.waiting_tickets),
+        breached: toNumber(metrics.breached),
+        resolved: toNumber(metrics.resolved_tickets),
+        closed: toNumber(metrics.closed_tickets),
+      },
+      ticketPage: {
+        limit: ticketLimit,
+        offset: ticketOffset,
+        hasMore:
+          !ticketId &&
+          ticketOffset + typedTicketRows.length <
+            (ticketScope === "active"
+              ? toNumber(metrics.open_tickets)
+              : ticketScope === "archive"
+                ? toNumber(metrics.archived_tickets)
+                : toNumber(metrics.open_tickets) +
+                  toNumber(metrics.archived_tickets)),
+      },
+      integrations: {
+        repairshopr: {
+          configured: repairshoprStatus.configured,
+          connected: repairshoprStatus.connected,
+          lastSyncAt: repairshoprStatus.lastSyncAt,
+          lastStatus: repairshoprStatus.lastStatus,
+        },
+      },
+      ticketHighlights: {
+        urgent: typedHighlightRows
+          .filter((ticket) => ticket.highlight_kind === "urgent")
+          .sort((left, right) => {
+            const priorityDifference =
+              priorityRank[toPriority(left.priority)] -
+              priorityRank[toPriority(right.priority)];
+            if (priorityDifference !== 0) return priorityDifference;
+            return (
+              new Date(right.updated_at).getTime() -
+              new Date(left.updated_at).getTime()
+            );
+          })
+          .map((ticket) => mapTicketRow(ticket)),
+        breached: typedHighlightRows
+          .filter((ticket) => ticket.highlight_kind === "breached")
+          .sort(
+            (left, right) =>
+              new Date(left.sla_due_at ?? 0).getTime() -
+              new Date(right.sla_due_at ?? 0).getTime(),
+          )
+          .map((ticket) => mapTicketRow(ticket)),
+        recent: typedHighlightRows
+          .filter((ticket) => ticket.highlight_kind === "recent")
+          .sort(
+            (left, right) =>
+              new Date(right.updated_at).getTime() -
+              new Date(left.updated_at).getTime(),
+          )
+          .map((ticket) => mapTicketRow(ticket)),
+      },
       metrics: [
         {
           key: "openTickets",
@@ -290,28 +642,9 @@ export async function getDashboardData(): Promise<DashboardData> {
           tone: "text-emerald-600",
         },
       ],
-      tickets: (ticketRows as TicketRow[]).map((ticket) => ({
-        id: ticket.id,
-        incidentId: ticket.incident_id,
-        ticketNumber: ticket.ticket_number,
-        title: ticket.title,
-        description: ticket.description,
-        status: ticket.status,
-        priority: toPriority(ticket.priority),
-        importanceScore: toNumber(ticket.importance_score),
-        urgencyScore: toNumber(ticket.urgency_score),
-        assignedUserId: ticket.assigned_user_id,
-        assignedTeamId: ticket.assigned_team_id,
-        assignee: ticket.assignee ?? "Unassigned",
-        team: ticket.team ?? "Unrouted",
-        reporterEmail: ticket.reporter_email,
-        slaDueAt: ticket.sla_due_at,
-        createdAt: ticket.created_at,
-        updatedAt: ticket.updated_at,
-        createdFrom: ticket.created_from,
-        duplicateCount: toNumber(ticket.duplicate_count),
-        comments: commentsByTicket.get(ticket.id) ?? [],
-      })),
+      tickets: typedTicketRows.map((ticket) =>
+        mapTicketRow(ticket, commentsByTicket.get(ticket.id) ?? []),
+      ),
       incidents: (incidentRows as IncidentRow[]).map((incident) => ({
         id: incident.id,
         title: incident.title,

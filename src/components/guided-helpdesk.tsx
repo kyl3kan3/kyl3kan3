@@ -36,7 +36,16 @@ import type {
   UserRole,
 } from "@/lib/types";
 
-type FilterStatus = "active" | "all" | TicketStatus;
+type FilterStatus = "all" | TicketStatus;
+type TicketQueueMode = "active" | "archive";
+
+type RepairShoprUiStatus = {
+  configured: boolean;
+  connected: boolean;
+  lastSyncAt: string | null;
+  lastStatus: "running" | "success" | "error" | "not_configured";
+  lastError: string | null;
+};
 
 type DraftTicket = {
   title: string;
@@ -57,6 +66,12 @@ const statuses: TicketStatus[] = [
   "resolved",
   "closed",
 ];
+const activeStatuses = statuses.filter(
+  (status) => status !== "resolved" && status !== "closed",
+);
+const archiveStatuses = statuses.filter(
+  (status) => status === "resolved" || status === "closed",
+);
 const roles: UserRole[] = ["agent", "manager", "admin", "reporter"];
 
 const emptyDraft: DraftTicket = {
@@ -100,7 +115,8 @@ function label(value: string) {
 
 function friendlyStatus(status: TicketStatus) {
   if (status === "waiting") return "Waiting";
-  if (status === "resolved" || status === "closed") return "Done";
+  if (status === "resolved") return "Resolved";
+  if (status === "closed") return "Closed";
   if (status === "in_progress") return "Being worked";
   return "Needs attention";
 }
@@ -110,6 +126,11 @@ function friendlyPriority(priority: Priority) {
   if (priority === "P2") return "Medium";
   if (priority === "P3") return "Normal";
   return "Low";
+}
+
+function statusLabel(status: TicketStatus) {
+  if (status === "in_progress") return "In progress";
+  return status.charAt(0).toUpperCase() + status.slice(1);
 }
 
 function priorityIcon(priority: Priority) {
@@ -135,6 +156,7 @@ function ticketMatchesSearch(ticket: TicketQueueItem, query: string) {
     ticket.assignee,
     ticket.team,
     ticket.reporterEmail,
+    ticket.customerName,
     ticket.priority,
     ticket.status,
   ]
@@ -142,6 +164,10 @@ function ticketMatchesSearch(ticket: TicketQueueItem, query: string) {
     .join(" ")
     .toLowerCase();
   return haystack.includes(query.toLowerCase());
+}
+
+function customerLabel(ticket: TicketQueueItem) {
+  return ticket.customerName ?? ticket.reporterEmail ?? "System alert";
 }
 
 function usersForTeam(users: UserOption[], teamId: string | null) {
@@ -241,17 +267,64 @@ function HealthButton({
   );
 }
 
-function useDashboardState(initialData: DashboardData) {
+function useDashboardState(
+  initialData: DashboardData,
+  options: {
+    ticketScope?: TicketQueueMode | "mixed";
+    ticketId?: string;
+    ticketLimit?: number;
+  } = {},
+) {
   const [data, setData] = useState(initialData);
   const [notice, setNotice] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
-  async function refresh() {
-    const response = await fetch("/api/dashboard", { cache: "no-store" });
+  function dashboardUrl(ticketOffset = 0) {
+    const params = new URLSearchParams();
+    if (options.ticketScope && options.ticketScope !== "mixed") {
+      params.set("ticketScope", options.ticketScope);
+    }
+    if (options.ticketId) params.set("ticketId", options.ticketId);
+    if (options.ticketLimit) {
+      params.set("ticketLimit", String(options.ticketLimit));
+    }
+    if (ticketOffset > 0) params.set("ticketOffset", String(ticketOffset));
+    const query = params.size > 0 ? `?${params.toString()}` : "";
+    return `/api/dashboard${query}`;
+  }
+
+  async function fetchDashboard(ticketOffset = 0) {
+    const response = await fetch(dashboardUrl(ticketOffset), {
+      cache: "no-store",
+    });
     if (!response.ok) throw new Error("Unable to refresh dashboard");
-    const nextData = (await response.json()) as DashboardData;
+    return (await response.json()) as DashboardData;
+  }
+
+  async function refresh() {
+    const nextData = await fetchDashboard();
     setData(nextData);
     return nextData;
+  }
+
+  async function loadMoreTickets() {
+    if (!data.ticketPage.hasMore) return "All tickets are loaded";
+    const nextData = await fetchDashboard(data.tickets.length);
+    setData((current) => {
+      const knownIds = new Set(current.tickets.map((ticket) => ticket.id));
+      const additionalTickets = nextData.tickets.filter(
+        (ticket) => !knownIds.has(ticket.id),
+      );
+      return {
+        ...nextData,
+        tickets: [...current.tickets, ...additionalTickets],
+        ticketPage: {
+          ...nextData.ticketPage,
+          offset: 0,
+        },
+      };
+    });
+    return `Loaded ${nextData.tickets.length} more tickets`;
   }
 
   function runMutation(action: () => Promise<string | void>) {
@@ -339,6 +412,7 @@ function useDashboardState(initialData: DashboardData) {
     isPending,
     runMutation,
     refresh,
+    loadMoreTickets,
     checkHealth,
     createTicket,
     patchTicket,
@@ -383,7 +457,7 @@ function TicketTask({ ticket, nowMs }: { ticket: TicketQueueItem; nowMs: number 
         </span>
       </div>
       <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-[#737064]">
-        <span className="truncate">Customer: {ticket.reporterEmail ?? "System alert"}</span>
+        <span className="truncate">Customer: {customerLabel(ticket)}</span>
         <span className="truncate">Owner: {ticket.assignee}</span>
         <span className={isBreached ? "font-bold text-red-700" : "font-semibold"}>
           {ticket.slaDueAt ? `Due ${formatDateTime(ticket.slaDueAt)}` : "No due time"}
@@ -406,7 +480,9 @@ function WorkBucket({
   nowMs: number;
   emptyMessage: string;
 }) {
-  const visibleTickets = tickets.slice(0, 6);
+  const [isExpanded, setIsExpanded] = useState(false);
+  const hasMore = tickets.length > 6;
+  const visibleTickets = isExpanded ? tickets : tickets.slice(0, 6);
   return (
     <section className="rounded-[28px] border border-[#e7dfd2] bg-white/80 p-4 shadow-sm sm:p-5">
       <div className="mb-4 flex items-start justify-between gap-4">
@@ -421,11 +497,22 @@ function WorkBucket({
         </span>
       </div>
       {visibleTickets.length > 0 ? (
-        <div className="grid gap-3">
-          {visibleTickets.map((ticket) => (
-            <TicketTask key={ticket.id} ticket={ticket} nowMs={nowMs} />
-          ))}
-        </div>
+        <>
+          <div className="grid gap-3">
+            {visibleTickets.map((ticket) => (
+              <TicketTask key={ticket.id} ticket={ticket} nowMs={nowMs} />
+            ))}
+          </div>
+          {hasMore ? (
+            <button
+              type="button"
+              onClick={() => setIsExpanded((expanded) => !expanded)}
+              className="btn-soft mt-4 inline-flex h-10 items-center justify-center rounded-full px-4 text-sm font-bold"
+            >
+              {isExpanded ? "Show less" : `Show all ${tickets.length}`}
+            </button>
+          ) : null}
+        </>
       ) : (
         <div className="rounded-2xl border border-dashed border-[#d8cfc1] bg-[#fbfaf7] px-4 py-8 text-center text-sm font-medium text-[#737064]">
           {emptyMessage}
@@ -592,21 +679,29 @@ function NewTicketModal({
 
 export function HomeConsole({ initialData }: { initialData: DashboardData }) {
   const { data, notice, isPending, runMutation, refresh, checkHealth, createTicket } =
-    useDashboardState(initialData);
+    useDashboardState(initialData, { ticketScope: "active", ticketLimit: 20 });
   const [isNewTicketOpen, setIsNewTicketOpen] = useState(false);
 
   const nowMs = new Date(data.refreshedAt).getTime();
   const isLive = data.source === "database";
   const canMutate = isLive || (data.source === "demo" && !data.dbError);
   const openTickets = data.tickets.filter(isActive);
-  const urgentTickets = openTickets
-    .filter((ticket) => ticket.priority === "P1" || ticket.priority === "P2")
-    .slice(0, 4);
-  const dueNowTickets = openTickets.filter((ticket) =>
-    isBreachedTicket(ticket, nowMs),
-  );
-  const recentTickets = data.tickets.slice(0, 5);
+  const urgentTickets =
+    data.ticketHighlights?.urgent ??
+    openTickets
+      .filter((ticket) => ticket.priority === "P1" || ticket.priority === "P2")
+      .slice(0, 4);
+  const recentTickets =
+    data.ticketHighlights?.recent.slice(0, 5) ??
+    [...openTickets]
+      .sort(
+        (left, right) =>
+          new Date(right.updatedAt).getTime() -
+          new Date(left.updatedAt).getTime(),
+      )
+      .slice(0, 5);
   const staffedTeams = data.teams.filter((team) => team.onCall > 0).length;
+  const repairShopr = data.integrations?.repairshopr;
 
   function submitNewTicket(draft: DraftTicket) {
     runMutation(async () => {
@@ -687,8 +782,8 @@ export function HomeConsole({ initialData }: { initialData: DashboardData }) {
             </div>
 
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
-              <SummaryCount label="Open tickets" value={openTickets.length} />
-              <SummaryCount label="High priority" value={urgentTickets.length} />
+              <SummaryCount label="Open tickets" value={data.ticketCounts.active} />
+              <SummaryCount label="High priority" value={data.ticketCounts.urgent} />
               <SummaryCount label="Teams on call" value={staffedTeams} />
             </div>
           </div>
@@ -706,7 +801,7 @@ export function HomeConsole({ initialData }: { initialData: DashboardData }) {
                 </p>
               </div>
               <span className="rounded-full bg-[#f7f5f0] px-3 py-1 text-[12px] font-bold tabular-nums text-[#24324a] ring-1 ring-[#e7dfd2]">
-                {urgentTickets.length}
+                {data.ticketCounts.urgent}
               </span>
             </div>
             {urgentTickets.length > 0 ? (
@@ -743,9 +838,20 @@ export function HomeConsole({ initialData }: { initialData: DashboardData }) {
                 good={isLive}
               />
               <StatusRow
+                label="RepairShopr"
+                value={
+                  repairShopr?.connected
+                    ? "Connected"
+                    : repairShopr?.configured
+                      ? "Needs sync"
+                      : "Not set"
+                }
+                good={Boolean(repairShopr?.connected)}
+              />
+              <StatusRow
                 label="Due now"
-                value={`${dueNowTickets.length} active`}
-                good={dueNowTickets.length === 0}
+                value={`${data.ticketCounts.breached} active`}
+                good={data.ticketCounts.breached === 0}
               />
               <StatusRow
                 label="On-call coverage"
@@ -770,18 +876,27 @@ export function HomeConsole({ initialData }: { initialData: DashboardData }) {
                 Recent movement
               </h2>
               <p className="mt-1 text-sm leading-5 text-[#737064]">
-                Latest tickets by update time.
+                Latest open tickets by update time.
               </p>
             </div>
-            <Link
-              href="/tickets"
-              className="rounded-full bg-[#f7f5f0] px-3 py-1.5 text-[12px] font-bold text-[#24324a] ring-1 ring-[#e7dfd2] hover:bg-white"
-            >
-              See all
-            </Link>
+            <div className="flex flex-wrap items-center gap-2">
+              <Link
+                href="/archive"
+                className="rounded-full bg-white px-3 py-1.5 text-[12px] font-bold text-[#737064] ring-1 ring-[#e7dfd2] hover:bg-[#fbfaf7]"
+              >
+                Archive
+              </Link>
+              <Link
+                href="/tickets"
+                className="rounded-full bg-[#f7f5f0] px-3 py-1.5 text-[12px] font-bold text-[#24324a] ring-1 ring-[#e7dfd2] hover:bg-white"
+              >
+                See all
+              </Link>
+            </div>
           </div>
-          <div className="grid gap-2 md:grid-cols-2">
-            {recentTickets.map((ticket) => (
+          {recentTickets.length > 0 ? (
+            <div className="grid gap-2 md:grid-cols-2">
+              {recentTickets.map((ticket) => (
               <Link
                 key={ticket.id}
                 href={`/tickets/${ticket.id}`}
@@ -805,8 +920,13 @@ export function HomeConsole({ initialData }: { initialData: DashboardData }) {
                   {ticket.team} / {ticket.assignee}
                 </p>
               </Link>
-            ))}
-          </div>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-dashed border-[#d8cfc1] bg-[#fbfaf7] px-4 py-8 text-center text-sm font-medium text-[#737064]">
+              No open tickets right now. Completed work is in the archive.
+            </div>
+          )}
         </section>
       </section>
       <NewTicketModal
@@ -854,17 +974,30 @@ function StatusRow({
 
 export function TriageConsole({
   initialData,
-  active = "home",
-  title = "What needs me now",
-  subtitle = "Home",
+  active = "tickets",
+  title = "Open tickets",
+  subtitle = "Tickets",
+  mode = "active",
 }: {
   initialData: DashboardData;
-  active?: Extract<ShellSection, "home" | "tickets">;
+  active?: Extract<ShellSection, "home" | "tickets" | "archive">;
   title?: string;
   subtitle?: string;
+  mode?: TicketQueueMode;
 }) {
-  const { data, notice, isPending, runMutation, refresh, createTicket } =
-    useDashboardState(initialData);
+  const {
+    data,
+    notice,
+    isPending,
+    runMutation,
+    refresh,
+    loadMoreTickets,
+    createTicket,
+  } =
+    useDashboardState(initialData, {
+      ticketScope: mode === "archive" ? "archive" : "active",
+      ticketLimit: 100,
+    });
   const [query, setQuery] = useState("");
   const [priorityFilter, setPriorityFilter] = useState<"all" | Priority>("all");
   const [statusFilter, setStatusFilter] = useState<FilterStatus>("all");
@@ -877,14 +1010,22 @@ export function TriageConsole({
   const canMutate = isLive || (data.source === "demo" && !data.dbError);
   const activeTickets = data.tickets.filter(isActive);
   const doneTickets = data.tickets.filter((ticket) => !isActive(ticket));
-  const breachedTickets = data.tickets.filter((ticket) =>
+  const activeTicketCount = data.ticketCounts.active;
+  const archivedTicketCount = data.ticketCounts.archived;
+  const isArchive = mode === "archive";
+  const remainingTicketCount = Math.max(
+    0,
+    (isArchive ? archivedTicketCount : activeTicketCount) - data.tickets.length,
+  );
+  const baseTickets = isArchive ? doneTickets : activeTickets;
+  const statusOptions = isArchive ? archiveStatuses : activeStatuses;
+  const breachedTickets = activeTickets.filter((ticket) =>
     isBreachedTicket(ticket, nowMs),
   ).length;
 
   const filteredTickets = useMemo(() => {
-    return data.tickets.filter((ticket) => {
-      if (statusFilter === "active" && !isActive(ticket)) return false;
-      if (statusFilter !== "active" && statusFilter !== "all") {
+    return baseTickets.filter((ticket) => {
+      if (statusFilter !== "all") {
         if (ticket.status !== statusFilter) return false;
       }
       if (priorityFilter !== "all" && ticket.priority !== priorityFilter) {
@@ -898,7 +1039,7 @@ export function TriageConsole({
       return true;
     });
   }, [
-    data.tickets,
+    baseTickets,
     nowMs,
     priorityFilter,
     query,
@@ -931,7 +1072,12 @@ export function TriageConsole({
     if (!isActive(ticket) || ticket.status === "waiting") return false;
     return !needsAttentionTickets.some((item) => item.id === ticket.id);
   });
-  const visibleDoneTickets = filteredTickets.filter((ticket) => !isActive(ticket));
+  const resolvedTickets = filteredTickets.filter(
+    (ticket) => ticket.status === "resolved",
+  );
+  const closedTickets = filteredTickets.filter(
+    (ticket) => ticket.status === "closed",
+  );
 
   function resetFilters() {
     setQuery("");
@@ -955,15 +1101,25 @@ export function TriageConsole({
       subtitle={subtitle}
       actions={
         <>
-          <button
-            type="button"
-            onClick={() => setIsNewTicketOpen(true)}
-            disabled={!canMutate}
-            className="btn-soft inline-flex h-10 items-center justify-center gap-2 rounded-full px-4 text-[13px] font-bold disabled:opacity-60"
-          >
-            <Plus className="h-4 w-4" />
-            New request
-          </button>
+          {isArchive ? (
+            <Link
+              href="/tickets"
+              className="btn-soft inline-flex h-10 items-center justify-center gap-2 rounded-full px-4 text-[13px] font-bold"
+            >
+              <Inbox className="h-4 w-4" />
+              Open tickets
+            </Link>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setIsNewTicketOpen(true)}
+              disabled={!canMutate}
+              className="btn-soft inline-flex h-10 items-center justify-center gap-2 rounded-full px-4 text-[13px] font-bold disabled:opacity-60"
+            >
+              <Plus className="h-4 w-4" />
+              New request
+            </button>
+          )}
           <button
             type="button"
             onClick={() => runMutation(() => refresh().then(() => "Refreshed"))}
@@ -982,20 +1138,33 @@ export function TriageConsole({
             <div>
               <div className="inline-flex items-center gap-2 rounded-full bg-[#e8f7f3] px-3 py-1 text-[12px] font-bold text-[#1f6f61] ring-1 ring-[#c7eee4]">
                 <Sparkles className="h-3.5 w-3.5" />
-                Guided helpdesk
+                {isArchive ? "Completed work" : "Guided helpdesk"}
               </div>
               <h2 className="mt-4 max-w-2xl text-2xl font-bold tracking-tight text-[#1f2937] sm:text-3xl">
-                Start with the requests that need a person.
+                {isArchive
+                  ? "Resolved tickets are out of the queue, but still easy to find."
+                  : "Start with the requests that need a person."}
               </h2>
               <p className="mt-3 max-w-2xl text-[15px] leading-7 text-[#5f625d]">
-                The day is grouped into simple work buckets so anyone can see
-                what to pick up, what is waiting, and what is already done.
+                {isArchive
+                  ? "Use this archive when you need to review what was marked done or closed."
+                  : "The day is grouped into simple work buckets so anyone can see what to pick up and what is waiting."}
               </p>
             </div>
             <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
-              <SummaryCount label="Needs attention" value={needsAttentionTickets.length} />
-              <SummaryCount label="Waiting" value={waitingTickets.length} />
-              <SummaryCount label="Done" value={doneTickets.length} />
+              {isArchive ? (
+                <>
+                  <SummaryCount label="Resolved" value={data.ticketCounts.resolved} />
+                  <SummaryCount label="Closed" value={data.ticketCounts.closed} />
+                  <SummaryCount label="Archived" value={archivedTicketCount} />
+                </>
+              ) : (
+                <>
+                  <SummaryCount label="Needs attention" value={data.ticketCounts.needsAttention} />
+                  <SummaryCount label="Waiting" value={data.ticketCounts.waiting} />
+                  <SummaryCount label="Archived" value={archivedTicketCount} />
+                </>
+              )}
             </div>
           </div>
         </section>
@@ -1004,7 +1173,7 @@ export function TriageConsole({
           <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
             <label className="grid gap-1.5">
               <span className="text-[12px] font-bold uppercase tracking-[0.1em] text-[#737064]">
-                Search requests
+                Search loaded requests
               </span>
               <span className="relative">
                 <Search className="pointer-events-none absolute left-3 top-3.5 h-4 w-4 text-[#737064]" />
@@ -1029,10 +1198,9 @@ export function TriageConsole({
               <div className="mt-3 grid min-w-[min(680px,calc(100vw-3rem))] gap-2 sm:grid-cols-[1fr_1fr_1fr_auto]">
                 <SelectField labelText="Status" value={statusFilter} onChange={(value) => setStatusFilter(value as FilterStatus)}>
                   <option value="all">All</option>
-                  <option value="active">Open only</option>
-                  {statuses.map((status) => (
+                  {statusOptions.map((status) => (
                     <option key={status} value={status}>
-                      {friendlyStatus(status)}
+                      {statusLabel(status)}
                     </option>
                   ))}
                 </SelectField>
@@ -1059,12 +1227,43 @@ export function TriageConsole({
                 </div>
               </div>
               <div className="mt-3 flex flex-wrap items-center gap-2">
+                {isArchive ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setQuery("");
+                        setPriorityFilter("all");
+                        setStatusFilter("resolved");
+                        setTeamFilter("all");
+                        setShowBreachedOnly(false);
+                      }}
+                      className="rounded-full border border-emerald-100 bg-white px-3 py-1.5 text-[12px] font-bold text-emerald-700 transition hover:bg-emerald-50"
+                    >
+                      Resolved
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setQuery("");
+                        setPriorityFilter("all");
+                        setStatusFilter("closed");
+                        setTeamFilter("all");
+                        setShowBreachedOnly(false);
+                      }}
+                      className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[12px] font-bold text-slate-700 transition hover:bg-slate-50"
+                    >
+                      Closed
+                    </button>
+                  </>
+                ) : (
+                  <>
                 <button
                   type="button"
                   onClick={() => {
                     setQuery("");
                     setPriorityFilter("P1");
-                    setStatusFilter("active");
+                    setStatusFilter("all");
                     setTeamFilter("all");
                     setShowBreachedOnly(false);
                   }}
@@ -1077,7 +1276,7 @@ export function TriageConsole({
                   onClick={() => {
                     setQuery("");
                     setPriorityFilter("all");
-                    setStatusFilter("active");
+                    setStatusFilter("all");
                     setTeamFilter("all");
                     setShowBreachedOnly(true);
                   }}
@@ -1085,21 +1284,72 @@ export function TriageConsole({
                 >
                   Due now ({breachedTickets})
                 </button>
+                  </>
+                )}
               </div>
             </details>
           </div>
           <p className="mt-3 text-[12px] font-medium text-[#737064]">
-            {filteredTickets.length} shown from {data.tickets.length} total.{" "}
-            {activeTickets.length} still open.
+            {filteredTickets.length} shown from {baseTickets.length} loaded of{" "}
+            {isArchive ? archivedTicketCount : activeTicketCount} total{" "}
+            {isArchive ? "archived" : "open"} tickets.{" "}
+            {isArchive
+              ? `${activeTicketCount} still open.`
+              : `${archivedTicketCount} in archive.`}
+            {hasActiveFilters
+              ? " Filters apply to loaded tickets; load more to extend the results."
+              : ""}
           </p>
         </section>
 
         <div className="grid gap-5">
-          <WorkBucket title="Needs attention" helper="Pick from here first. These are new, urgent, unrouted, or due now." tickets={needsAttentionTickets} nowMs={nowMs} emptyMessage="Nothing needs immediate attention." />
-          <WorkBucket title="Next up" helper="Open requests that are ready for someone to continue." tickets={nextUpTickets} nowMs={nowMs} emptyMessage="No other open requests match the current filters." />
-          <WorkBucket title="Waiting" helper="Requests paused while the team waits for a reply or outside action." tickets={waitingTickets} nowMs={nowMs} emptyMessage="Nothing is waiting right now." />
-          <WorkBucket title="Done" helper="Recently completed requests kept nearby for quick review." tickets={visibleDoneTickets} nowMs={nowMs} emptyMessage="No completed requests match the current filters." />
+          {isArchive ? (
+            <>
+              <WorkBucket title="Resolved" helper="Completed requests that can still be reopened from the ticket detail page." tickets={resolvedTickets} nowMs={nowMs} emptyMessage="No resolved requests match the current filters." />
+              <WorkBucket title="Closed" helper="Closed requests kept for audit and follow-up review." tickets={closedTickets} nowMs={nowMs} emptyMessage="No closed requests match the current filters." />
+            </>
+          ) : (
+            <>
+              <WorkBucket title="Needs attention" helper="Pick from here first. These are new, urgent, unrouted, or due now." tickets={needsAttentionTickets} nowMs={nowMs} emptyMessage="Nothing needs immediate attention." />
+              <WorkBucket title="Next up" helper="Open requests that are ready for someone to continue." tickets={nextUpTickets} nowMs={nowMs} emptyMessage="No other open requests match the current filters." />
+              <WorkBucket title="Waiting" helper="Requests paused while the team waits for a reply or outside action." tickets={waitingTickets} nowMs={nowMs} emptyMessage="Nothing is waiting right now." />
+              <section className="rounded-[28px] border border-[#e7dfd2] bg-white/80 p-4 shadow-sm sm:p-5">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <h2 className="text-[18px] font-bold tracking-tight text-[#1f2937]">
+                      Completed work moved out of the way
+                    </h2>
+                    <p className="mt-1 text-sm leading-5 text-[#737064]">
+                      Resolved and closed tickets leave this queue automatically.
+                    </p>
+                  </div>
+                  <Link
+                    href="/archive"
+                    className="btn-soft inline-flex h-11 items-center justify-center gap-2 rounded-full px-4 text-sm font-bold"
+                  >
+                    <CheckCircle2 className="h-4 w-4" />
+                    View archive ({archivedTicketCount})
+                  </Link>
+                </div>
+              </section>
+            </>
+          )}
         </div>
+        {data.ticketPage.hasMore ? (
+          <div className="flex justify-center">
+            <button
+              type="button"
+              onClick={() => runMutation(loadMoreTickets)}
+              disabled={isPending}
+              className="btn-soft inline-flex h-11 items-center justify-center gap-2 rounded-full px-5 text-sm font-bold disabled:opacity-60"
+            >
+              <RotateCcw
+                className={`h-4 w-4 ${isPending ? "animate-spin" : ""}`}
+              />
+              Load more ({remainingTicketCount} remaining)
+            </button>
+          </div>
+        ) : null}
       </section>
       <NewTicketModal isOpen={isNewTicketOpen} onClose={() => setIsNewTicketOpen(false)} data={data} onSubmit={submitNewTicket} isPending={isPending} canMutate={canMutate} />
       <Notice message={notice} />
@@ -1136,7 +1386,7 @@ export function TicketDetailConsole({
     checkHealth,
     patchTicket,
     addComment,
-  } = useDashboardState(initialData);
+  } = useDashboardState(initialData, { ticketId });
   const [note, setNote] = useState("");
   const ticket = data.tickets.find((item) => item.id === ticketId) ?? null;
   const incident = ticket?.incidentId
@@ -1144,6 +1394,7 @@ export function TicketDetailConsole({
     : null;
   const isLive = data.source === "database";
   const canMutate = isLive || (data.source === "demo" && !data.dbError);
+  const isRepairShoprTicket = ticket?.createdFrom === "repairshopr";
   const teamUsers = usersForTeam(data.users, ticket?.assignedTeamId ?? null);
 
   function submitNote(event: FormEvent<HTMLFormElement>) {
@@ -1190,71 +1441,94 @@ export function TicketDetailConsole({
                 {ticket.title}
               </h2>
               <div className="mt-4 grid gap-3 text-sm text-[#5f625d] sm:grid-cols-2">
-                <InfoLine label="Customer" value={ticket.reporterEmail ?? "System alert"} />
+                <InfoLine label="Customer" value={customerLabel(ticket)} />
                 <InfoLine label="Owner" value={ticket.assignee} />
                 <InfoLine label="Team" value={ticket.team} />
                 <InfoLine label="Due" value={ticket.slaDueAt ? formatDateTime(ticket.slaDueAt) : "No due time"} />
+                {ticket.repairshoprStatus ? (
+                  <InfoLine label="RepairShopr" value={ticket.repairshoprStatus} />
+                ) : null}
               </div>
               <div className="mt-6 grid gap-3 sm:grid-cols-3">
-                <ActionButton
-                  disabled={isPending || !canMutate}
-                  onClick={() =>
-                    runMutation(async () => {
-                      await patchTicket(ticket.id, {
-                        status: "in_progress",
-                        comment: "Acknowledged from the helpdesk.",
-                      });
-                      return "Acknowledged";
-                    })
-                  }
-                >
-                  <CheckCircle2 className="h-4 w-4" />
-                  I am on it
-                </ActionButton>
-                <button
-                  type="button"
-                  disabled={isPending || !canMutate}
-                  onClick={() =>
-                    runMutation(async () => {
-                      await patchTicket(ticket.id, {
-                        status: "resolved",
-                        comment: "Resolved from the helpdesk.",
-                      });
-                      return "Marked done";
-                    })
-                  }
-                  className="btn-success inline-flex h-11 items-center justify-center gap-2 rounded-full px-4 text-sm font-bold disabled:opacity-60"
-                >
-                  <CheckCircle2 className="h-4 w-4" />
-                  Mark done
-                </button>
-                <ActionButton
-                  disabled={isPending || !canMutate}
-                  onClick={() =>
-                    runMutation(async () => {
-                      await patchTicket(ticket.id, {
-                        status: "triaged",
-                        comment: "Reopened from the helpdesk.",
-                      });
-                      return "Reopened";
-                    })
-                  }
-                >
-                  <RotateCcw className="h-4 w-4" />
-                  Reopen
-                </ActionButton>
+                {isRepairShoprTicket ? (
+                  <div className="rounded-2xl bg-[#fbfaf7] px-4 py-3 text-sm font-medium leading-6 text-[#5f625d] ring-1 ring-[#e7dfd2] sm:col-span-3">
+                    RepairShopr owns this ticket status. Update it there so the
+                    next sync does not replace a local-only change.
+                  </div>
+                ) : (
+                  <>
+                    <ActionButton
+                      disabled={isPending || !canMutate}
+                      onClick={() =>
+                        runMutation(async () => {
+                          await patchTicket(ticket.id, {
+                            status: "in_progress",
+                            comment: "Acknowledged from the helpdesk.",
+                          });
+                          return "Acknowledged";
+                        })
+                      }
+                    >
+                      <CheckCircle2 className="h-4 w-4" />
+                      I am on it
+                    </ActionButton>
+                    <button
+                      type="button"
+                      disabled={isPending || !canMutate}
+                      onClick={() =>
+                        runMutation(async () => {
+                          await patchTicket(ticket.id, {
+                            status: "resolved",
+                            comment: "Resolved from the helpdesk.",
+                          });
+                          return "Marked done";
+                        })
+                      }
+                      className="btn-success inline-flex h-11 items-center justify-center gap-2 rounded-full px-4 text-sm font-bold disabled:opacity-60"
+                    >
+                      <CheckCircle2 className="h-4 w-4" />
+                      Mark done
+                    </button>
+                    <ActionButton
+                      disabled={isPending || !canMutate}
+                      onClick={() =>
+                        runMutation(async () => {
+                          await patchTicket(ticket.id, {
+                            status: "triaged",
+                            comment: "Reopened from the helpdesk.",
+                          });
+                          return "Reopened";
+                        })
+                      }
+                    >
+                      <RotateCcw className="h-4 w-4" />
+                      Reopen
+                    </ActionButton>
+                  </>
+                )}
               </div>
             </section>
 
             <section className="rounded-[28px] border border-[#e7dfd2] bg-white p-5 shadow-sm">
               <h3 className="text-lg font-bold text-[#1f2937]">Details</h3>
               <div className="mt-4 grid gap-3">
-                <SelectField labelText="Status" value={ticket.status} disabled={isPending || !canMutate} onChange={(value) => runMutation(async () => {
+                {ticket.repairshoprUrl ? (
+                  <Link
+                    href={ticket.repairshoprUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="btn-soft inline-flex h-11 items-center justify-center gap-2 rounded-full px-4 text-sm font-bold"
+                  >
+                    <Settings className="h-4 w-4" />
+                    Open in RepairShopr
+                  </Link>
+                ) : null}
+                <SelectField labelText={isRepairShoprTicket ? "Status (RepairShopr)" : "Status"} value={ticket.status} disabled={isPending || !canMutate || isRepairShoprTicket} onChange={(value) => runMutation(async () => {
                   await patchTicket(ticket.id, { status: value, comment: `Status changed to ${label(value)}.` });
                   return "Status updated";
                 })}>
                   {statuses.map((status) => (
-                    <option key={status} value={status}>{friendlyStatus(status)}</option>
+                    <option key={status} value={status}>{statusLabel(status)}</option>
                   ))}
                 </SelectField>
                 <SelectField labelText="Priority" value={ticket.priority} disabled={isPending || !canMutate} onChange={(value) => runMutation(async () => {
@@ -1420,13 +1694,20 @@ function Timeline({ ticket }: { ticket: TicketQueueItem }) {
 
 export function OverviewConsole({ initialData }: { initialData: DashboardData }) {
   const { data, notice, isPending, runMutation, refresh, checkHealth } =
-    useDashboardState(initialData);
+    useDashboardState(initialData, { ticketScope: "active", ticketLimit: 50 });
   const nowMs = new Date(data.refreshedAt).getTime();
   const isLive = data.source === "database";
   const activeTickets = data.tickets.filter(isActive);
-  const waitingTickets = data.tickets.filter((ticket) => ticket.status === "waiting");
-  const breachedTickets = data.tickets.filter((ticket) => isBreachedTicket(ticket, nowMs));
-  const doneTickets = data.tickets.filter((ticket) => !isActive(ticket));
+  const recentActiveTickets =
+    data.ticketHighlights?.recent ??
+    [...activeTickets].sort(
+      (left, right) =>
+        new Date(right.updatedAt).getTime() -
+        new Date(left.updatedAt).getTime(),
+    );
+  const breachedTickets =
+    data.ticketHighlights?.breached ??
+    data.tickets.filter((ticket) => isBreachedTicket(ticket, nowMs));
 
   return (
     <HelpdeskShell
@@ -1445,10 +1726,10 @@ export function OverviewConsole({ initialData }: { initialData: DashboardData })
     >
       <section className="mx-auto grid max-w-[1120px] gap-5 px-4 py-5 sm:px-6">
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <SummaryCount label="Open requests" value={activeTickets.length} />
-          <SummaryCount label="Need attention" value={breachedTickets.length} />
-          <SummaryCount label="Waiting" value={waitingTickets.length} />
-          <SummaryCount label="Done" value={doneTickets.length} />
+          <SummaryCount label="Open requests" value={data.ticketCounts.active} />
+          <SummaryCount label="Need attention" value={data.ticketCounts.needsAttention} />
+          <SummaryCount label="Waiting" value={data.ticketCounts.waiting} />
+          <SummaryCount label="Done" value={data.ticketCounts.archived} />
         </div>
         <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
           <section className="rounded-[28px] border border-[#e7dfd2] bg-white p-5 shadow-sm">
@@ -1488,12 +1769,26 @@ export function OverviewConsole({ initialData }: { initialData: DashboardData })
           </section>
         </div>
         <section className="rounded-[28px] border border-[#e7dfd2] bg-white p-5 shadow-sm">
-          <h2 className="text-lg font-bold text-[#1f2937]">Recent activity</h2>
-          <div className="mt-4 grid gap-3 md:grid-cols-2">
-            {data.tickets.slice(0, 8).map((ticket) => (
-              <TicketTask key={ticket.id} ticket={ticket} nowMs={nowMs} />
-            ))}
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <h2 className="text-lg font-bold text-[#1f2937]">Recent open activity</h2>
+            <Link
+              href="/archive"
+              className="rounded-full bg-[#f7f5f0] px-3 py-1.5 text-[12px] font-bold text-[#24324a] ring-1 ring-[#e7dfd2] hover:bg-white"
+            >
+              View archive
+            </Link>
           </div>
+          {activeTickets.length > 0 ? (
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              {recentActiveTickets.slice(0, 8).map((ticket) => (
+                <TicketTask key={ticket.id} ticket={ticket} nowMs={nowMs} />
+              ))}
+            </div>
+          ) : (
+            <p className="mt-4 rounded-2xl bg-[#fbfaf7] p-4 text-sm text-[#737064] ring-1 ring-[#e7dfd2]">
+              No open activity right now. Completed work is in the archive.
+            </p>
+          )}
         </section>
       </section>
       <Notice message={notice} />
@@ -1532,11 +1827,33 @@ const exampleProviders = [
 ];
 
 export function SettingsConsole({ initialData }: { initialData: DashboardData }) {
+  const initialRepairShopr = initialData.integrations?.repairshopr;
   const [integrationTest, setIntegrationTest] = useState({
     webhookUrl: "",
     apiKey: "",
     subject: "Integration smoke alert",
   });
+  const [repairShoprStatus, setRepairShoprStatus] = useState<RepairShoprUiStatus>(
+    {
+      configured: initialRepairShopr?.configured ?? false,
+      connected: initialRepairShopr?.connected ?? false,
+      lastSyncAt: initialRepairShopr?.lastSyncAt ?? null,
+      lastStatus: initialRepairShopr?.lastStatus ?? "not_configured",
+      lastError: null,
+    },
+  );
+  const [repairShoprConfig, setRepairShoprConfig] = useState<{
+    subdomain: string | null;
+    apiKeyPresent: boolean | null;
+    syncSecretPresent: boolean | null;
+    cronSecretPresent: boolean | null;
+  }>({
+    subdomain: null,
+    apiKeyPresent: null,
+    syncSecretPresent: null,
+    cronSecretPresent: null,
+  });
+  const [repairShoprSyncSecret, setRepairShoprSyncSecret] = useState("");
   const [directoryData, setDirectoryData] = useState(initialData);
   const [teamDraft, setTeamDraft] = useState({ name: "" });
   const [userDraft, setUserDraft] = useState({
@@ -1605,6 +1922,78 @@ export function SettingsConsole({ initialData }: { initialData: DashboardData })
     return result.ticketNumber
       ? `Test request created TK-${result.ticketNumber}`
       : "Webhook test accepted";
+  }
+
+  async function refreshRepairShoprStatus() {
+    const response = await fetch("/api/integrations/repairshopr/status", {
+      cache: "no-store",
+      headers: {
+        "x-repairshopr-sync-secret": repairShoprSyncSecret,
+      },
+    });
+    const result = (await response.json()) as {
+      ok?: boolean;
+      error?: string;
+      config?: {
+        subdomain?: string | null;
+        apiKeyPresent?: boolean;
+        syncSecretPresent?: boolean;
+        cronSecretPresent?: boolean;
+        baseUrl?: string | null;
+      };
+      status?: RepairShoprUiStatus;
+    };
+    if (!response.ok || !result.ok || !result.status) {
+      throw new Error(result.error ?? "Unable to refresh RepairShopr status");
+    }
+    setRepairShoprStatus(result.status);
+    setRepairShoprConfig({
+      subdomain: result.config?.subdomain ?? null,
+      apiKeyPresent: Boolean(result.config?.apiKeyPresent),
+      syncSecretPresent: Boolean(result.config?.syncSecretPresent),
+      cronSecretPresent: Boolean(result.config?.cronSecretPresent),
+    });
+    return result.status.connected
+      ? "RepairShopr connected"
+      : "RepairShopr status refreshed";
+  }
+
+  async function testRepairShoprConnection() {
+    const response = await fetch("/api/integrations/repairshopr/test", {
+      method: "POST",
+      headers: {
+        "x-repairshopr-sync-secret": repairShoprSyncSecret,
+      },
+    });
+    const result = (await response.json()) as { ok?: boolean; error?: string };
+    if (!response.ok || !result.ok) {
+      throw new Error(result.error ?? "RepairShopr connection failed");
+    }
+    await refreshRepairShoprStatus();
+    return "RepairShopr API connection works";
+  }
+
+  async function syncRepairShoprNow() {
+    const response = await fetch("/api/integrations/repairshopr/sync", {
+      method: "POST",
+      headers: {
+        "x-repairshopr-sync-secret": repairShoprSyncSecret,
+      },
+    });
+    const result = (await response.json()) as {
+      ok?: boolean;
+      error?: string;
+      customersSynced?: number;
+      ticketsSynced?: number;
+    };
+    if (!response.ok || !result.ok) {
+      throw new Error(result.error ?? "RepairShopr sync failed");
+    }
+    await refreshRepairShoprStatus();
+    await refreshDirectory();
+    return `Synced ${result.customersSynced ?? 0} customers and ${
+      result.ticketsSynced ?? 0
+    } tickets`;
   }
 
   async function refreshDirectory() {
@@ -1700,6 +2089,110 @@ export function SettingsConsole({ initialData }: { initialData: DashboardData })
           <p className="mt-3 text-sm leading-6 text-[#737064]">
             Use your inbound webhook secret or Resend webhook secret in Vercel
             environment variables before sending live mail.
+          </p>
+        </SetupCard>
+
+        <SetupCard icon={<Settings className="h-5 w-5" />} title="RepairShopr mirror" helper="Pull tickets and customers from RepairShopr into this triage console.">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <StatusRow
+              label="Connection"
+              value={
+                repairShoprStatus.connected
+                  ? "Connected"
+                  : repairShoprStatus.configured
+                    ? "Configured"
+                    : "Not set"
+              }
+              good={repairShoprStatus.connected}
+            />
+            <StatusRow
+              label="API key"
+              value={
+                repairShoprConfig.apiKeyPresent === null
+                  ? "Not checked"
+                  : repairShoprConfig.apiKeyPresent
+                    ? "Stored"
+                    : "Missing"
+              }
+              good={repairShoprConfig.apiKeyPresent === true}
+            />
+            <StatusRow
+              label="Sync secret"
+              value={
+                repairShoprConfig.syncSecretPresent === null
+                  ? "Not checked"
+                  : repairShoprConfig.syncSecretPresent
+                    ? "Stored"
+                    : "Missing"
+              }
+              good={repairShoprConfig.syncSecretPresent === true}
+            />
+            <StatusRow
+              label="Cron secret"
+              value={
+                repairShoprConfig.cronSecretPresent === null
+                  ? "Not checked"
+                  : repairShoprConfig.cronSecretPresent
+                    ? "Stored"
+                    : "Missing"
+              }
+              good={repairShoprConfig.cronSecretPresent === true}
+            />
+          </div>
+          <div className="mt-3 rounded-2xl bg-[#fbfaf7] px-3 py-3 text-sm leading-6 text-[#5f625d] ring-1 ring-[#e7dfd2]">
+            <p>
+              Subdomain:{" "}
+              <span className="font-bold text-[#1f2937]">
+                {repairShoprConfig.subdomain ??
+                  "Enter the sync secret and refresh to check"}
+              </span>
+            </p>
+            <p>
+              Last sync:{" "}
+              <span className="font-bold text-[#1f2937]">
+                {repairShoprStatus.lastSyncAt
+                  ? formatDateTime(repairShoprStatus.lastSyncAt)
+                  : "Never"}
+              </span>
+            </p>
+            {repairShoprStatus.lastError ? (
+              <p className="font-semibold text-red-700">
+                {repairShoprStatus.lastError}
+              </p>
+            ) : null}
+          </div>
+          <div className="mt-3 grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto_auto_auto]">
+            <TextField
+              labelText="Sync secret"
+              type="password"
+              value={repairShoprSyncSecret}
+              onChange={setRepairShoprSyncSecret}
+              placeholder="For manual sync"
+            />
+            <div className="flex items-end">
+              <button type="button" onClick={() => runMutation(refreshRepairShoprStatus)} disabled={isPending || !repairShoprSyncSecret.trim()} className="btn-soft inline-flex h-11 w-full items-center justify-center gap-2 rounded-full px-4 text-sm font-bold disabled:opacity-60">
+                <RotateCcw className={`h-4 w-4 ${isPending ? "animate-spin" : ""}`} />
+                Refresh
+              </button>
+            </div>
+            <div className="flex items-end">
+              <button type="button" onClick={() => runMutation(testRepairShoprConnection)} disabled={isPending || !repairShoprStatus.configured || !repairShoprSyncSecret.trim()} className="btn-soft inline-flex h-11 w-full items-center justify-center gap-2 rounded-full px-4 text-sm font-bold disabled:opacity-60">
+                <ShieldCheck className="h-4 w-4" />
+                Test
+              </button>
+            </div>
+            <div className="flex items-end">
+              <button type="button" onClick={() => runMutation(syncRepairShoprNow)} disabled={isPending || !repairShoprSyncSecret.trim()} className="btn-primary inline-flex h-11 w-full items-center justify-center gap-2 rounded-full px-4 text-sm font-bold disabled:opacity-60">
+                <RadioTower className="h-4 w-4" />
+                Sync now
+              </button>
+            </div>
+          </div>
+          <p className="mt-3 text-sm leading-6 text-[#737064]">
+            Set REPAIRSHOPR_SUBDOMAIN, REPAIRSHOPR_API_KEY,
+            REPAIRSHOPR_SYNC_SECRET, and CRON_SECRET in Vercel. The five-minute
+            cron schedule requires a Vercel Pro plan; manual sync uses the sync
+            secret without storing it in the browser.
           </p>
         </SetupCard>
 

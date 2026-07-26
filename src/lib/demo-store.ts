@@ -40,6 +40,23 @@ function isActive(status: TicketStatus) {
   return status !== "resolved" && status !== "closed";
 }
 
+function isBreached(ticket: TicketQueueItem, nowMs: number) {
+  return Boolean(
+    ticket.slaDueAt && new Date(ticket.slaDueAt).getTime() < nowMs,
+  );
+}
+
+function needsAttention(ticket: TicketQueueItem, nowMs: number) {
+  if (!isActive(ticket.status) || ticket.status === "waiting") return false;
+  return (
+    ticket.priority === "P1" ||
+    ticket.priority === "P2" ||
+    ticket.status === "new" ||
+    !ticket.assignedUserId ||
+    isBreached(ticket, nowMs)
+  );
+}
+
 function priorityScores(priority: Priority) {
   if (priority === "P1") return { importanceScore: 45, urgencyScore: 42 };
   if (priority === "P2") return { importanceScore: 35, urgencyScore: 28 };
@@ -149,6 +166,15 @@ function deriveDashboard(data: DashboardData, dbError?: string): DashboardData {
         new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime()
       );
     });
+  const activeTickets = tickets.filter((ticket) => isActive(ticket.status));
+  const archivedTickets = tickets.filter((ticket) => !isActive(ticket.status));
+  const breachedTickets = activeTickets
+    .filter((ticket) => isBreached(ticket, nowMs))
+    .sort(
+      (left, right) =>
+        new Date(left.slaDueAt ?? 0).getTime() -
+        new Date(right.slaDueAt ?? 0).getTime(),
+    );
 
   return {
     ...clone(data),
@@ -156,6 +182,43 @@ function deriveDashboard(data: DashboardData, dbError?: string): DashboardData {
     refreshedAt: new Date(nowMs).toISOString(),
     dbError,
     metrics: buildMetrics(tickets, nowMs),
+    ticketCounts: {
+      active: activeTickets.length,
+      archived: archivedTickets.length,
+      urgent: activeTickets.filter(
+        (ticket) => ticket.priority === "P1" || ticket.priority === "P2",
+      ).length,
+      needsAttention: activeTickets.filter((ticket) =>
+        needsAttention(ticket, nowMs),
+      ).length,
+      waiting: activeTickets.filter((ticket) => ticket.status === "waiting")
+        .length,
+      breached: breachedTickets.length,
+      resolved: archivedTickets.filter((ticket) => ticket.status === "resolved")
+        .length,
+      closed: archivedTickets.filter((ticket) => ticket.status === "closed")
+        .length,
+    },
+    ticketHighlights: {
+      urgent: activeTickets
+        .filter(
+          (ticket) => ticket.priority === "P1" || ticket.priority === "P2",
+        )
+        .slice(0, 4),
+      breached: breachedTickets.slice(0, 5),
+      recent: [...activeTickets]
+        .sort(
+          (left, right) =>
+            new Date(right.updatedAt).getTime() -
+            new Date(left.updatedAt).getTime(),
+        )
+        .slice(0, 8),
+    },
+    ticketPage: {
+      limit: tickets.length,
+      offset: 0,
+      hasMore: false,
+    },
     tickets,
     incidents: data.incidents
       .filter((incident) => incident.status !== "closed")

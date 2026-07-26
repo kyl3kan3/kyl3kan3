@@ -31,6 +31,7 @@ type TicketLookupRow = {
   status: TicketStatus;
   assigned_team_id: string | null;
   assigned_user_id: string | null;
+  created_from: string;
 };
 
 export type CreateTicketInput = {
@@ -122,7 +123,7 @@ async function ensureDefaultOrg() {
 async function findTicket(ticketId: string) {
   const sql = getSql();
   const rows = (await sql`
-    select id, org_id, incident_id, priority, status, assigned_team_id, assigned_user_id
+    select id, org_id, incident_id, priority, status, assigned_team_id, assigned_user_id, created_from
     from tickets
     where id = ${ticketId}
     limit 1
@@ -396,6 +397,10 @@ export async function updateTicket(ticketId: string, input: UpdateTicketInput) {
   }
 
   if (input.status) {
+    if (current.created_from === "repairshopr") {
+      throw new Error("RepairShopr ticket status must be updated in RepairShopr");
+    }
+
     await sql`
       update tickets
       set status = ${input.status}
@@ -507,6 +512,8 @@ export async function addTicketComment(ticketId: string, input: AddCommentInput)
     )
     returning id
   `) as IdRow[];
+
+  await sql`update tickets set updated_at = now() where id = ${ticketId}`;
 
   await writeAudit(current.org_id, ticketId, "ticket.commented", {
     commentId: rows[0].id,

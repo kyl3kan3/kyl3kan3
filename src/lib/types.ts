@@ -24,10 +24,13 @@ export type TicketQueueItem = {
   assignee: string;
   team: string;
   reporterEmail: string | null;
+  customerName?: string | null;
   slaDueAt: string | null;
   createdAt: string;
   updatedAt: string;
   createdFrom: string;
+  repairshoprUrl?: string | null;
+  repairshoprStatus?: string | null;
   duplicateCount: number;
   comments: TicketComment[];
 };
@@ -90,6 +93,34 @@ export type UserOption = {
 export type DashboardData = {
   source: "database" | "demo";
   refreshedAt: string;
+  ticketCounts: {
+    active: number;
+    archived: number;
+    urgent: number;
+    needsAttention: number;
+    waiting: number;
+    breached: number;
+    resolved: number;
+    closed: number;
+  };
+  ticketPage: {
+    limit: number;
+    offset: number;
+    hasMore: boolean;
+  };
+  integrations?: {
+    repairshopr?: {
+      configured: boolean;
+      connected: boolean;
+      lastSyncAt: string | null;
+      lastStatus: "running" | "success" | "error" | "not_configured";
+    };
+  };
+  ticketHighlights?: {
+    urgent: TicketQueueItem[];
+    breached: TicketQueueItem[];
+    recent: TicketQueueItem[];
+  };
   metrics: OpsMetric[];
   tickets: TicketQueueItem[];
   incidents: IncidentSnapshot[];

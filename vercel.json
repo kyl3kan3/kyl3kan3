@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/integrations/repairshopr/sync",
+      "schedule": "*/5 * * * *"
+    }
+  ]
+}

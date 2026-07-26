@@ -31,6 +31,8 @@ The app is build-safe without `DATABASE_URL`; it falls back to demo data until N
 
 `ALLOWED_INBOUND_RECIPIENT_DOMAINS` limits which receiving domains can create tickets. For this app, set it to `inbound.decent4.com` so mail for another domain or setup is rejected. `ALLOWED_INBOUND_RECIPIENTS` can optionally list exact allowed addresses.
 
+`REPAIRSHOPR_SUBDOMAIN`, `REPAIRSHOPR_API_KEY`, and `REPAIRSHOPR_SYNC_SECRET` enable the RepairShopr mirror. The API key stays server-side, and the sync secret protects manual sync, connection tests, and status checks. On Vercel, set `CRON_SECRET` so scheduled requests can authenticate. `REPAIRSHOPR_MAX_PAGES` is a safety limit: if the provider reports more pages, the sync fails visibly instead of silently skipping records. The included five-minute schedule requires Vercel Pro; Hobby deployments must change it to a daily schedule.
+
 ## Functional surface
 
 - Live Neon-backed dashboard metrics, ticket queue, team load, and incident stream.
@@ -39,6 +41,7 @@ The app is build-safe without `DATABASE_URL`; it falls back to demo data until N
 - Ticket comments and timeline refresh.
 - Inbound alert webhook that normalizes alert/email payloads, uses AI to summarize/classify/assign them, deduplicates incidents, creates or updates tickets, and records raw alerts plus audit metadata.
 - Provider-aware inbound intake for Resend, Postmark, SendGrid, Mailgun-style payloads, with routing into `alert_email` or `client_email` tickets based on recipients and content.
+- RepairShopr ticket/customer mirror that pulls from RepairShopr into Neon for triage, dashboard, and archive views.
 
 ## API
 
@@ -49,6 +52,11 @@ The app is build-safe without `DATABASE_URL`; it falls back to demo data until N
 - `PATCH /api/tickets/:id`
 - `POST /api/tickets/:id/comments`
 - `POST /api/webhooks/inbound-email`
+- `GET /api/integrations/repairshopr/status`
+- `POST /api/integrations/repairshopr/test`
+- `POST /api/integrations/repairshopr/sync`
+
+The RepairShopr integration endpoints require either `Authorization: Bearer <REPAIRSHOPR_SYNC_SECRET>` or `x-repairshopr-sync-secret: <REPAIRSHOPR_SYNC_SECRET>`. Vercel cron calls use `Authorization: Bearer <CRON_SECRET>` automatically.
 
 ## Inbound email setup
 

@@ -13,7 +13,8 @@ export const metadata: Metadata = {
 };
 
 export default async function TicketPage({ params }: PageProps) {
-  const [{ id }, dashboard] = await Promise.all([params, getDashboardData()]);
+  const { id } = await params;
+  const dashboard = await getDashboardData({ ticketId: id });
 
   return <TicketDetailConsole initialData={dashboard} ticketId={id} />;
 }

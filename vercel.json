@@ -3,6 +3,10 @@
     {
       "path": "/api/integrations/repairshopr/sync",
       "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/jobs/jev-assessments",
+      "schedule": "*/5 * * * *"
     }
   ]
 }

@@ -1,13 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {
-  deterministicDecision,
-  triageIncomingAlert,
-  validateAiDecision,
-  type AssignmentContext,
-  type HeuristicScore,
-  type NormalizedAlertForTriage,
-} from "./ai-triage";
+import { routeJevTriage, type AssignmentContext } from "./ai-triage";
+import type { JevTriageResult } from "./jev";
 
 const context: AssignmentContext = {
   teams: [
@@ -20,8 +14,8 @@ const context: AssignmentContext = {
       onCall: 1,
     },
     {
-      id: "team-database",
-      name: "Database",
+      id: "team-security",
+      name: "Security",
       openTickets: 1,
       urgentTickets: 0,
       members: 1,
@@ -38,144 +32,105 @@ const context: AssignmentContext = {
       openTickets: 4,
     },
     {
-      id: "user-database",
-      email: "riley@example.com",
-      fullName: "Riley",
-      teamIds: ["team-database"],
+      id: "user-security",
+      email: "sam@example.com",
+      fullName: "Sam",
+      teamIds: ["team-security"],
       isOnCall: true,
       openTickets: 1,
     },
   ],
 };
 
-const alert: NormalizedAlertForTriage = {
+const alert = {
   source: "resend",
   externalId: "email-1",
   senderEmail: "alerts@example.com",
-  recipientEmail: "alerts@decent4.com",
-  subject: "Database timeout spike",
-  bodyText: "Postgres query timeout spike is affecting checkout.",
-  service: "postgres",
+  recipientEmail: "alerts@example.com",
+  subject: "Suspicious account sign-in",
+  bodyText: "A privileged account has an unexpected sign-in.",
+  service: "identity",
   severity: "critical",
-  createdFrom: "alert_email",
+  createdFrom: "alert_email" as const,
 };
 
-const heuristicScore: HeuristicScore = {
-  priority: "P2",
-  importanceScore: 35,
-  urgencyScore: 28,
-};
-
-test("accepts valid AI assignment output", () => {
-  const decision = validateAiDecision(
-    {
-      title: "Database timeout spike",
-      summary: "Postgres query timeouts are affecting checkout.",
-      createdFrom: "alert_email",
-      service: "postgres",
-      severity: "critical",
+function result(overrides: Partial<JevTriageResult> = {}): JevTriageResult {
+  return {
+    status: "succeeded",
+    model: "jev-test",
+    rubricVersion: "ticket-triage-v1",
+    issueType: "security",
+    urgency: "critical",
+    suggestedTeamId: "team-security",
+    confidences: {
+      issueType: 0.9,
+      urgency: 0.88,
+      suggestedTeam: 0.92,
+      minimum: 0.88,
+      humanTriageProbability: 0.04,
+    },
+    needsHumanTriage: false,
+    routing: {
       priority: "P1",
-      importanceScore: 50,
-      urgencyScore: 45,
-      assignedTeamId: "team-database",
-      assignedUserId: "user-database",
-      confidence: 0.91,
-      reasoning: "Database terms and low current team load.",
-      dedupHint: "postgres timeout checkout",
+      importanceScore: 45,
+      urgencyScore: 42,
+      slaMinutes: 5,
     },
+    rawResponse: {},
+    error: null,
+    ...overrides,
+  };
+}
+
+test("Jev assesses while local rules assign priority, queue, and owner", () => {
+  const decision = routeJevTriage(
     alert,
-    heuristicScore,
+    { priority: "P3", importanceScore: 20, urgencyScore: 18 },
     context,
-    "test-model",
+    result(),
   );
 
-  assert.equal(decision?.usedAi, true);
-  assert.equal(decision?.assignedTeamId, "team-database");
-  assert.equal(decision?.assignedUserId, "user-database");
-  assert.equal(decision?.priority, "P1");
+  assert.equal(decision.issueType, "security");
+  assert.equal(decision.priority, "P1");
+  assert.equal(decision.assignedTeamId, "team-security");
+  assert.equal(decision.assignedUserId, "user-security");
+  assert.equal(decision.needsHumanTriage, false);
 });
 
-test("rejects invalid assignment IDs", () => {
-  const decision = validateAiDecision(
-    {
-      title: "Database timeout spike",
-      summary: "Postgres query timeouts are affecting checkout.",
-      createdFrom: "alert_email",
-      service: "postgres",
-      severity: "critical",
-      priority: "P1",
-      importanceScore: 50,
-      urgencyScore: 45,
-      assignedTeamId: "missing-team",
-      assignedUserId: "missing-user",
-      confidence: 0.91,
-      reasoning: "Bad IDs.",
-      dedupHint: "postgres timeout checkout",
-    },
+test("low-confidence Jev results stay unassigned for a human", () => {
+  const decision = routeJevTriage(
     alert,
-    heuristicScore,
+    { priority: "P2", importanceScore: 35, urgencyScore: 28 },
     context,
-    "test-model",
+    result({ needsHumanTriage: true }),
   );
 
-  assert.equal(decision, null);
+  assert.equal(decision.assignedTeamId, "");
+  assert.equal(decision.assignedUserId, "");
+  assert.equal(decision.priority, "P2");
+  assert.equal(decision.importanceScore, 35);
+  assert.equal(decision.urgencyScore, 28);
+  assert.equal(decision.needsHumanTriage, true);
 });
 
-test("keeps low-confidence valid AI assignment", () => {
-  const decision = validateAiDecision(
-    {
-      title: "Client billing question",
-      summary: "A customer needs help with a billing request.",
-      createdFrom: "client_email",
-      service: "billing",
-      severity: "normal",
-      priority: "P3",
-      importanceScore: 20,
-      urgencyScore: 20,
-      assignedTeamId: "team-platform",
-      assignedUserId: "user-platform",
-      confidence: 0.22,
-      reasoning: "Valid but low confidence.",
-      dedupHint: "billing customer request",
-    },
-    { ...alert, createdFrom: "client_email" },
-    heuristicScore,
+test("Jev failure preserves safe heuristic priority and requires a human", () => {
+  const decision = routeJevTriage(
+    alert,
+    { priority: "P2", importanceScore: 35, urgencyScore: 28 },
     context,
-    "test-model",
+    result({
+      status: "failed",
+      issueType: null,
+      urgency: null,
+      suggestedTeamId: null,
+      confidences: null,
+      routing: null,
+      error: "timeout",
+    }),
   );
 
-  assert.equal(decision?.createdFrom, "client_email");
-  assert.equal(decision?.assignedTeamId, "team-platform");
-  assert.equal(decision?.confidence, 0.22);
-});
-
-test("deterministic fallback always assigns when context has teams and users", () => {
-  const decision = deterministicDecision(
-    alert,
-    heuristicScore,
-    context,
-    "test-model",
-    "missing_openai_api_key",
-  );
-
-  assert.equal(decision.usedAi, false);
-  assert.equal(decision.fallbackReason, "missing_openai_api_key");
-  assert.equal(decision.assignedTeamId, "team-database");
-  assert.equal(decision.assignedUserId, "user-database");
-});
-
-test("missing OpenAI key route returns deterministic assignment", async () => {
-  const originalKey = process.env.OPENAI_API_KEY;
-  delete process.env.OPENAI_API_KEY;
-  const decision = await triageIncomingAlert({
-    alert,
-    rawPayload: { type: "email.received", data: { subject: alert.subject } },
-    heuristicScore,
-    context,
-  });
-  if (originalKey) process.env.OPENAI_API_KEY = originalKey;
-
-  assert.equal(decision.usedAi, false);
-  assert.equal(decision.assignedTeamId, "team-database");
-  assert.equal(decision.assignedUserId, "user-database");
+  assert.equal(decision.priority, "P2");
+  assert.equal(decision.assignedTeamId, "");
+  assert.equal(decision.fallbackReason, "timeout");
+  assert.equal(decision.needsHumanTriage, true);
 });

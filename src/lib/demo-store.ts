@@ -198,6 +198,16 @@ function deriveDashboard(data: DashboardData, dbError?: string): DashboardData {
         .length,
       closed: archivedTickets.filter((ticket) => ticket.status === "closed")
         .length,
+      needsHumanTriage: activeTickets.filter(
+        (ticket) => ticket.intakeAssessment?.needsHumanTriage,
+      ).length,
+      completionReviewsPending: archivedTickets.filter(
+        (ticket) =>
+          !ticket.completionReview ||
+          ticket.completionReview.status === "pending" ||
+          ticket.completionReview.status === "running" ||
+          ticket.completionReview.status === "retryable",
+      ).length,
     },
     ticketHighlights: {
       urgent: activeTickets
@@ -361,6 +371,9 @@ export async function createDemoTicket(input: CreateTicketInput) {
     updatedAt: now.toISOString(),
     createdFrom: input.createdFrom ?? "manual",
     duplicateCount: 0,
+    intakeAssessment: null,
+    routingDecision: null,
+    completionReview: null,
     comments: input.comment
       ? [
           {
@@ -368,7 +381,7 @@ export async function createDemoTicket(input: CreateTicketInput) {
             ticketId,
             authorEmail: input.reporterEmail || "operator@example.com",
             body: input.comment,
-            createdVia: "ui",
+            createdVia: "system",
             createdAt: now.toISOString(),
           },
         ]
@@ -429,9 +442,17 @@ export async function updateDemoTicket(
 
   if (
     (input.assignedTeamId !== undefined || input.assignedUserId !== undefined) &&
-    ticket.status === "new"
+    (ticket.assignedTeamId || ticket.assignedUserId)
   ) {
-    ticket.status = "assigned";
+    if (ticket.status === "new" || ticket.status === "triaged") {
+      ticket.status = "assigned";
+    }
+    if (ticket.intakeAssessment) {
+      ticket.intakeAssessment.needsHumanTriage = false;
+    }
+    if (ticket.routingDecision) {
+      ticket.routingDecision.needsHumanTriage = false;
+    }
   }
 
   if (input.comment) {
@@ -466,7 +487,7 @@ export async function addDemoTicketComment(
     ticketId,
     authorEmail: input.authorEmail || "operator@example.com",
     body,
-    createdVia: "ui" as const,
+    createdVia: input.createdVia ?? ("ui" as const),
     createdAt: new Date().toISOString(),
   };
 

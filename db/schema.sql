@@ -82,9 +82,16 @@ create table if not exists tickets (
   priority text not null check (priority in ('P1','P2','P3','P4')),
   importance_score int not null default 0,
   urgency_score int not null default 0,
+  issue_type text,
+  triage_confidence numeric,
+  triage_needs_human boolean not null default false,
   assigned_team_id uuid references teams(id) on delete set null,
   assigned_user_id uuid references users(id) on delete set null,
   sla_due_at timestamptz,
+  first_response_at timestamptz,
+  resolved_at timestamptz,
+  completion_cycle int not null default 0 check (completion_cycle >= 0),
+  reopened_count int not null default 0 check (reopened_count >= 0),
   reporter_email text,
   created_from text not null default 'alert_email',
   repairshopr_ticket_id text,
@@ -142,6 +149,84 @@ create table if not exists ticket_comments (
   created_at timestamptz not null default now()
 );
 
+create table if not exists ticket_status_events (
+  id uuid primary key default gen_random_uuid(),
+  org_id uuid not null references orgs(id) on delete cascade,
+  ticket_id uuid not null references tickets(id) on delete cascade,
+  from_status text check (
+    from_status is null or
+    from_status in ('new','triaged','assigned','in_progress','waiting','resolved','closed')
+  ),
+  to_status text not null check (
+    to_status in ('new','triaged','assigned','in_progress','waiting','resolved','closed')
+  ),
+  completion_cycle int not null default 0 check (completion_cycle >= 0),
+  actor_user_id uuid references users(id) on delete set null,
+  source text not null default 'system',
+  metadata jsonb not null default '{}'::jsonb,
+  changed_at timestamptz not null default now()
+);
+
+create table if not exists ticket_completion_submissions (
+  id uuid primary key default gen_random_uuid(),
+  org_id uuid not null references orgs(id) on delete cascade,
+  ticket_id uuid not null references tickets(id) on delete cascade,
+  completion_cycle int not null check (completion_cycle >= 1),
+  technician_user_id uuid references users(id) on delete set null,
+  technician_name text,
+  technician_role text,
+  technician_snapshot jsonb not null default '{}'::jsonb,
+  issue_type text,
+  resolution_summary text,
+  customer_next_steps text,
+  verification_evidence text,
+  submitted_at timestamptz not null default now(),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique(ticket_id, completion_cycle)
+);
+
+create table if not exists jev_assessments (
+  id uuid primary key default gen_random_uuid(),
+  org_id uuid not null references orgs(id) on delete cascade,
+  ticket_id uuid not null references tickets(id) on delete cascade,
+  completion_submission_id uuid references ticket_completion_submissions(id) on delete set null,
+  kind text not null check (kind in ('triage','completion_review')),
+  completion_cycle int not null default 0 check (completion_cycle >= 0),
+  evaluated_user_id uuid references users(id) on delete set null,
+  evaluated_role text,
+  issue_type text,
+  status text not null default 'pending' check (
+    status in (
+      'pending',
+      'running',
+      'succeeded',
+      'retryable',
+      'failed',
+      'not_configured',
+      'superseded'
+    )
+  ),
+  idempotency_key text not null unique,
+  input_snapshot jsonb not null default '{}'::jsonb,
+  model text,
+  rubric_version text,
+  procedure_version text,
+  rubric jsonb,
+  result jsonb,
+  overall_score numeric,
+  evidence_coverage numeric,
+  missing_evidence_count int not null default 0 check (missing_evidence_count >= 0),
+  attempt_count int not null default 0 check (attempt_count >= 0),
+  next_retry_at timestamptz,
+  last_error text,
+  provider_request_id text,
+  started_at timestamptz,
+  completed_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 create table if not exists routing_rules (
   id uuid primary key default gen_random_uuid(),
   org_id uuid not null references orgs(id) on delete cascade,
@@ -174,6 +259,13 @@ alter table tickets add column if not exists repairshopr_status text;
 alter table tickets add column if not exists repairshopr_url text;
 alter table tickets add column if not exists repairshopr_updated_at timestamptz;
 alter table tickets add column if not exists repairshopr_payload jsonb;
+alter table tickets add column if not exists issue_type text;
+alter table tickets add column if not exists triage_confidence numeric;
+alter table tickets add column if not exists triage_needs_human boolean not null default false;
+alter table tickets add column if not exists first_response_at timestamptz;
+alter table tickets add column if not exists resolved_at timestamptz;
+alter table tickets add column if not exists completion_cycle int not null default 0;
+alter table tickets add column if not exists reopened_count int not null default 0;
 
 create index if not exists alert_events_org_received_idx on alert_events(org_id, received_at desc);
 create index if not exists alert_events_fingerprint_idx on alert_events(org_id, fingerprint);
@@ -189,6 +281,24 @@ create index if not exists tickets_org_repairshopr_customer_idx
   where repairshopr_customer_id is not null;
 create index if not exists repairshopr_sync_runs_started_idx
   on repairshopr_sync_runs(started_at desc);
+create index if not exists ticket_status_events_ticket_changed_idx
+  on ticket_status_events(ticket_id, changed_at desc);
+create index if not exists ticket_status_events_org_changed_idx
+  on ticket_status_events(org_id, changed_at desc);
+create index if not exists ticket_completion_submissions_ticket_cycle_idx
+  on ticket_completion_submissions(ticket_id, completion_cycle desc);
+create index if not exists ticket_completion_submissions_cohort_idx
+  on ticket_completion_submissions(org_id, technician_role, issue_type, submitted_at desc);
+create index if not exists jev_assessments_ticket_kind_cycle_idx
+  on jev_assessments(ticket_id, kind, completion_cycle desc, created_at desc);
+create index if not exists jev_assessments_org_status_retry_idx
+  on jev_assessments(org_id, status, next_retry_at)
+  where status in ('pending','retryable');
+create index if not exists jev_assessments_cohort_idx
+  on jev_assessments(org_id, kind, evaluated_role, issue_type, created_at desc);
+create index if not exists jev_assessments_submission_idx
+  on jev_assessments(completion_submission_id)
+  where completion_submission_id is not null;
 
 create or replace function touch_updated_at()
 returns trigger
@@ -213,6 +323,16 @@ for each row execute function touch_updated_at();
 drop trigger if exists repairshopr_customers_touch_updated_at on repairshopr_customers;
 create trigger repairshopr_customers_touch_updated_at
 before update on repairshopr_customers
+for each row execute function touch_updated_at();
+
+drop trigger if exists ticket_completion_submissions_touch_updated_at on ticket_completion_submissions;
+create trigger ticket_completion_submissions_touch_updated_at
+before update on ticket_completion_submissions
+for each row execute function touch_updated_at();
+
+drop trigger if exists jev_assessments_touch_updated_at on jev_assessments;
+create trigger jev_assessments_touch_updated_at
+before update on jev_assessments
 for each row execute function touch_updated_at();
 
 with org as (

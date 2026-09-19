@@ -7,7 +7,13 @@ import {
   updateDemoTicket,
 } from "./demo-store";
 import { getSql, hasDatabaseUrl } from "./db";
-import type { Priority, TicketStatus, UserRole } from "./types";
+import {
+  createCompletionAssessment,
+  enqueueTicketTriage,
+  processJevAssessment,
+} from "./jev-assessments";
+import { ensureJevSchema } from "./jev-schema";
+import type { Priority, TicketComment, TicketStatus, UserRole } from "./types";
 
 const priorities: Priority[] = ["P1", "P2", "P3", "P4"];
 const roles: UserRole[] = ["reporter", "agent", "manager", "admin"];
@@ -23,6 +29,7 @@ const statuses: TicketStatus[] = [
 
 type IdRow = { id: string };
 type TicketIdRow = { id: string; ticket_number: string };
+type CompletionCycleRow = { completion_cycle: number | string };
 type TicketLookupRow = {
   id: string;
   org_id: string;
@@ -32,6 +39,7 @@ type TicketLookupRow = {
   assigned_team_id: string | null;
   assigned_user_id: string | null;
   created_from: string;
+  completion_cycle: number | string;
 };
 
 export type CreateTicketInput = {
@@ -53,11 +61,16 @@ export type UpdateTicketInput = {
   assignedTeamId?: string | null;
   assignedUserId?: string | null;
   comment?: string | null;
+  resolutionSummary?: string | null;
+  customerNextSteps?: string | null;
+  verificationEvidence?: string | null;
 };
 
 export type AddCommentInput = {
   body: string;
   authorEmail?: string | null;
+  countsAsResponse?: boolean;
+  createdVia?: TicketComment["createdVia"];
 };
 
 export type CreateTeamInput = {
@@ -74,6 +87,10 @@ export type CreateUserInput = {
 
 function cleanString(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function numberValue(value: number | string | null | undefined) {
+  return Number(value ?? 0);
 }
 
 function asPriority(value: unknown, fallback: Priority = "P3"): Priority {
@@ -123,7 +140,16 @@ async function ensureDefaultOrg() {
 async function findTicket(ticketId: string) {
   const sql = getSql();
   const rows = (await sql`
-    select id, org_id, incident_id, priority, status, assigned_team_id, assigned_user_id, created_from
+    select
+      id,
+      org_id,
+      incident_id,
+      priority,
+      status,
+      assigned_team_id,
+      assigned_user_id,
+      created_from,
+      completion_cycle
     from tickets
     where id = ${ticketId}
     limit 1
@@ -201,6 +227,18 @@ export function parseUpdateTicketInput(payload: Record<string, unknown>) {
         : cleanString(payload.assignedUserId) || null,
     comment:
       payload.comment === undefined ? undefined : cleanString(payload.comment),
+    resolutionSummary:
+      payload.resolutionSummary === undefined
+        ? undefined
+        : cleanString(payload.resolutionSummary) || null,
+    customerNextSteps:
+      payload.customerNextSteps === undefined
+        ? undefined
+        : cleanString(payload.customerNextSteps) || null,
+    verificationEvidence:
+      payload.verificationEvidence === undefined
+        ? undefined
+        : cleanString(payload.verificationEvidence) || null,
   } satisfies UpdateTicketInput;
 }
 
@@ -285,6 +323,7 @@ export async function createTicket(input: CreateTicketInput) {
 
   const sql = getSql();
   const orgId = await ensureDefaultOrg();
+  await ensureJevSchema();
   const priority = input.priority ?? "P3";
   const scores = priorityScores(priority);
 
@@ -359,6 +398,8 @@ export async function createTicket(input: CreateTicketInput) {
     await addTicketComment(ticket.id, {
       body: input.comment,
       authorEmail: input.reporterEmail || "operator@example.com",
+      countsAsResponse: false,
+      createdVia: "system",
     });
   }
 
@@ -367,6 +408,47 @@ export async function createTicket(input: CreateTicketInput) {
     assignedTeamId: input.assignedTeamId,
     assignedUserId: input.assignedUserId,
   });
+
+  await sql`
+    insert into ticket_status_events (
+      org_id,
+      ticket_id,
+      from_status,
+      to_status,
+      completion_cycle,
+      source,
+      metadata
+    ) values (
+      ${orgId},
+      ${ticket.id},
+      null,
+      ${input.assignedUserId || input.assignedTeamId ? "assigned" : "new"},
+      0,
+      'ui',
+      ${JSON.stringify({ createdFrom: input.createdFrom ?? "manual" })}::jsonb
+    )
+  `;
+
+  try {
+    const assessmentId = await enqueueTicketTriage({
+      orgId,
+      ticketId: ticket.id,
+      ticket: {
+        title: input.title,
+        description: input.description,
+        source: input.createdFrom ?? "manual",
+      },
+      fallbackPriority: priority,
+      preservePriority: input.priority !== undefined,
+      preserveAssignment: Boolean(input.assignedTeamId || input.assignedUserId),
+    });
+    if (assessmentId) await processJevAssessment(assessmentId);
+  } catch (error) {
+    console.warn("jev_ticket_triage_enqueue_failed", {
+      ticketId: ticket.id,
+      error: error instanceof Error ? error.message : "unknown",
+    });
+  }
 
   return ticket;
 }
@@ -377,6 +459,7 @@ export async function updateTicket(ticketId: string, input: UpdateTicketInput) {
   }
 
   const sql = getSql();
+  await ensureJevSchema();
   const current = await findTicket(ticketId);
 
   if (!current) {
@@ -396,15 +479,72 @@ export async function updateTicket(ticketId: string, input: UpdateTicketInput) {
     `;
   }
 
-  if (input.status) {
+  let completionCycle = numberValue(current.completion_cycle);
+  let shouldReviewCompletion = false;
+  let effectiveStatus = current.status;
+
+  if (input.status && input.status !== current.status) {
     if (current.created_from === "repairshopr") {
       throw new Error("RepairShopr ticket status must be updated in RepairShopr");
     }
 
-    await sql`
+    const wasComplete =
+      current.status === "resolved" || current.status === "closed";
+    const willBeComplete =
+      input.status === "resolved" || input.status === "closed";
+    shouldReviewCompletion = !wasComplete && willBeComplete;
+    const isReopening = wasComplete && !willBeComplete;
+
+    const rows = (await sql`
       update tickets
-      set status = ${input.status}
+      set
+        status = ${input.status},
+        completion_cycle = completion_cycle + ${shouldReviewCompletion ? 1 : 0},
+        reopened_count = reopened_count + ${isReopening ? 1 : 0},
+        resolved_at = case
+          when ${shouldReviewCompletion} then now()
+          when ${isReopening} then null
+          else resolved_at
+        end,
+        first_response_at = case
+          when ${input.status === "in_progress"} then coalesce(first_response_at, now())
+          else first_response_at
+        end
       where id = ${ticketId}
+      returning completion_cycle
+    `) as CompletionCycleRow[];
+    completionCycle = numberValue(rows[0]?.completion_cycle);
+    effectiveStatus = input.status;
+
+    await sql`
+      insert into ticket_status_events (
+        org_id,
+        ticket_id,
+        from_status,
+        to_status,
+        completion_cycle,
+        source,
+        metadata
+      ) values (
+        ${current.org_id},
+        ${ticketId},
+        ${current.status},
+        ${input.status},
+        ${completionCycle},
+        'ui',
+        ${JSON.stringify({
+          completionReviewQueued: shouldReviewCompletion,
+          reopened: isReopening,
+          ...(shouldReviewCompletion
+            ? {
+                resolutionSummary: input.resolutionSummary ?? null,
+                customerNextSteps: input.customerNextSteps ?? null,
+                verificationEvidence: input.verificationEvidence ?? null,
+                technicianUserId: current.assigned_user_id,
+              }
+            : {}),
+        })}::jsonb
+      )
     `;
 
     if (current.incident_id) {
@@ -449,25 +589,52 @@ export async function updateTicket(ticketId: string, input: UpdateTicketInput) {
   }
 
   if (input.assignedTeamId !== undefined || input.assignedUserId !== undefined) {
+    const assignedTeamId =
+      input.assignedTeamId === undefined
+        ? current.assigned_team_id
+        : input.assignedTeamId;
+    const assignedUserId =
+      input.assignedUserId === undefined
+        ? current.assigned_user_id
+        : input.assignedUserId;
+    const humanRouted = Boolean(assignedTeamId || assignedUserId);
+    const assignmentStatus =
+      humanRouted && ["new", "triaged"].includes(effectiveStatus)
+        ? "assigned"
+        : effectiveStatus;
     await sql`
       update tickets
       set
-        assigned_team_id = ${
-          input.assignedTeamId === undefined
-            ? current.assigned_team_id
-            : input.assignedTeamId
-        },
-        assigned_user_id = ${
-          input.assignedUserId === undefined
-            ? current.assigned_user_id
-            : input.assignedUserId
-        },
-        status = case
-          when status = 'new' then 'assigned'
-          else status
-        end
+        assigned_team_id = ${assignedTeamId},
+        assigned_user_id = ${assignedUserId},
+        triage_needs_human = case
+          when ${humanRouted} then false
+          else triage_needs_human
+        end,
+        status = ${assignmentStatus}
       where id = ${ticketId}
     `;
+    if (assignmentStatus !== effectiveStatus) {
+      await sql`
+        insert into ticket_status_events (
+          org_id,
+          ticket_id,
+          from_status,
+          to_status,
+          completion_cycle,
+          source,
+          metadata
+        ) values (
+          ${current.org_id},
+          ${ticketId},
+          ${effectiveStatus},
+          ${assignmentStatus},
+          ${completionCycle},
+          'ui',
+          ${JSON.stringify({ humanRoutingCompleted: true })}::jsonb
+        )
+      `;
+    }
   }
 
   if (input.comment) {
@@ -478,6 +645,26 @@ export async function updateTicket(ticketId: string, input: UpdateTicketInput) {
   }
 
   await writeAudit(current.org_id, ticketId, "ticket.updated", input);
+
+  if (shouldReviewCompletion) {
+    try {
+      const assessmentId = await createCompletionAssessment({
+        orgId: current.org_id,
+        ticketId,
+        completionCycle,
+        resolutionSummary: input.resolutionSummary,
+        customerNextSteps: input.customerNextSteps,
+        verificationEvidence: input.verificationEvidence,
+      });
+      if (assessmentId) await processJevAssessment(assessmentId);
+    } catch (error) {
+      console.warn("jev_completion_review_enqueue_failed", {
+        ticketId,
+        completionCycle,
+        error: error instanceof Error ? error.message : "unknown",
+      });
+    }
+  }
   return { id: ticketId };
 }
 
@@ -492,6 +679,7 @@ export async function addTicketComment(ticketId: string, input: AddCommentInput)
   }
 
   const sql = getSql();
+  await ensureJevSchema();
   const current = await findTicket(ticketId);
   if (!current) {
     throw new Error("Ticket not found");
@@ -508,15 +696,26 @@ export async function addTicketComment(ticketId: string, input: AddCommentInput)
       ${ticketId},
       ${input.authorEmail || "operator@example.com"},
       ${body},
-      'ui'
+      ${input.createdVia ?? "ui"}
     )
     returning id
   `) as IdRow[];
 
-  await sql`update tickets set updated_at = now() where id = ${ticketId}`;
+  await sql`
+    update tickets
+    set
+      updated_at = now(),
+      first_response_at = case
+        when ${input.countsAsResponse !== false}
+          then coalesce(first_response_at, now())
+        else first_response_at
+      end
+    where id = ${ticketId}
+  `;
 
   await writeAudit(current.org_id, ticketId, "ticket.commented", {
     commentId: rows[0].id,
+    authorEmail: input.authorEmail || "operator@example.com",
   });
 
   return rows[0];

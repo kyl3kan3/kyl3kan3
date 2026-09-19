@@ -7,6 +7,7 @@ import {
 } from "@/lib/ai-triage";
 import { getSql, hasDatabaseUrl } from "@/lib/db";
 import { getDemoDashboardData } from "@/lib/demo-store";
+import { persistCompletedTicketTriage } from "@/lib/jev-assessments";
 import { createTicket } from "@/lib/operations";
 import type { Priority } from "@/lib/types";
 
@@ -836,7 +837,7 @@ function logParseDiagnostic(
   });
 }
 
-async function writeAiTriageAudit({
+async function writeJevTriageAudit({
   orgId,
   ticketId,
   decision,
@@ -862,7 +863,7 @@ async function writeAiTriageAudit({
       'system',
       'ticket',
       ${ticketId},
-      'ai.triaged',
+      'jev.triaged',
       ${JSON.stringify({
         model: decision.model,
         usedAi: decision.usedAi,
@@ -878,6 +879,11 @@ async function writeAiTriageAudit({
         severity: decision.severity,
         dedupHint: decision.dedupHint,
         reasoning: decision.reasoning,
+        issueType: decision.issueType,
+        urgency: decision.urgency,
+        suggestedTeamId: decision.suggestedTeamId,
+        needsHumanTriage: decision.needsHumanTriage,
+        rubricVersion: decision.rubricVersion,
         reassignedExistingTicket,
       })}::jsonb
     )
@@ -968,11 +974,14 @@ export async function POST(request: Request) {
         createdFrom: decision.createdFrom,
         recipientEmail: parsedAlert.recipientEmail,
         fingerprint: alertFingerprint,
-        ai: {
+        jev: {
           usedAi: decision.usedAi,
           model: decision.model,
           confidence: decision.confidence,
           fallbackReason: decision.fallbackReason,
+          issueType: decision.issueType,
+          urgency: decision.urgency,
+          needsHumanTriage: decision.needsHumanTriage,
         },
       },
       { status: 202 },
@@ -988,11 +997,12 @@ export async function POST(request: Request) {
     returning id
   `) as IdRow[];
   const orgId = String(orgRows[0].id);
+  const context = await assignmentContext(orgId);
   const decision = await triageIncomingAlert({
     alert: parsedAlert,
     rawPayload,
     heuristicScore,
-    context: await assignmentContext(orgId),
+    context,
   });
   const alert: NormalizedAlert = {
     ...parsedAlert,
@@ -1190,7 +1200,7 @@ export async function POST(request: Request) {
         ${incidentId},
         ${alert.subject},
         ${alert.bodyText},
-        'assigned',
+        ${decision.needsHumanTriage ? "triaged" : "assigned"},
         ${score.priority},
         ${score.importanceScore},
         ${score.urgencyScore},
@@ -1210,7 +1220,40 @@ export async function POST(request: Request) {
     ticketNumber = String(ticketRows[0].ticket_number);
   }
 
-  await writeAiTriageAudit({
+  try {
+    await persistCompletedTicketTriage({
+      orgId,
+      ticketId,
+      idempotencyKey: `triage:${ticketId}:${alertId}:${decision.rubricVersion}`,
+      ticket: {
+        title: alert.subject,
+        description: alert.bodyText,
+        source: alert.source,
+        service: alert.service,
+        severity: alert.severity,
+      },
+      teams: context.teams.map((team) => ({
+        id: team.id,
+        name: team.name,
+        description: `${team.name} support queue`,
+      })),
+      fallbackPriority: heuristicScore.priority,
+      result: decision.jevResult,
+      routing: {
+        priority: decision.priority,
+        assignedTeamId: decision.assignedTeamId || null,
+        assignedUserId: decision.assignedUserId || null,
+        needsHumanTriage: decision.needsHumanTriage,
+      },
+    });
+  } catch (error) {
+    console.warn("jev_triage_persistence_failed", {
+      ticketId,
+      error: error instanceof Error ? error.message : "unknown",
+    });
+  }
+
+  await writeJevTriageAudit({
     orgId,
     ticketId,
     decision,
@@ -1230,11 +1273,14 @@ export async function POST(request: Request) {
       createdFrom: alert.createdFrom,
       recipientEmail: alert.recipientEmail,
       fingerprint: alertFingerprint,
-      ai: {
+      jev: {
         usedAi: decision.usedAi,
         model: decision.model,
         confidence: decision.confidence,
         fallbackReason: decision.fallbackReason,
+        issueType: decision.issueType,
+        urgency: decision.urgency,
+        needsHumanTriage: decision.needsHumanTriage,
       },
     },
     { status: 202 },

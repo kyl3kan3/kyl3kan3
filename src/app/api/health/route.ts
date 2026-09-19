@@ -8,6 +8,7 @@ export async function GET() {
     return NextResponse.json({
       ok: true,
       database: "not_configured",
+      jev: process.env.TYPESAFE_API_KEY?.trim() ? "configured" : "not_configured",
     });
   }
 
@@ -18,6 +19,7 @@ export async function GET() {
     return NextResponse.json({
       ok: true,
       database: "connected",
+      jev: process.env.TYPESAFE_API_KEY?.trim() ? "configured" : "not_configured",
     });
   } catch (error) {
     return NextResponse.json(

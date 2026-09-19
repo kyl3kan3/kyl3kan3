@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
 import { getDashboardData } from "@/lib/dashboard";
 import { createTicket, parseCreateTicketInput } from "@/lib/operations";
+import { appAccessFailure, isAppAccessAuthorized } from "@/lib/manager-auth";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(request: Request) {
+  if (!isAppAccessAuthorized(request)) return appAccessFailure();
   const dashboard = await getDashboardData();
 
   return NextResponse.json({
@@ -15,6 +17,7 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  if (!isAppAccessAuthorized(request)) return appAccessFailure();
   try {
     const payload = (await request.json()) as Record<string, unknown>;
     const ticket = await createTicket(parseCreateTicketInput(payload));

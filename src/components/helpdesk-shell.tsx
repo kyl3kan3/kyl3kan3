@@ -6,13 +6,20 @@ import {
   Home,
   Inbox,
   LayoutDashboard,
+  SearchCheck,
   Settings,
   Sparkles,
 } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
-export type ShellSection = "home" | "tickets" | "archive" | "overview" | "settings";
+export type ShellSection =
+  | "home"
+  | "tickets"
+  | "archive"
+  | "overview"
+  | "quality"
+  | "settings";
 
 const navItems = [
   { href: "/", label: "Home", key: "home" as const, icon: Home },
@@ -23,6 +30,12 @@ const navItems = [
     label: "Overview",
     key: "overview" as const,
     icon: LayoutDashboard,
+  },
+  {
+    href: "/quality",
+    label: "Quality",
+    key: "quality" as const,
+    icon: SearchCheck,
   },
   { href: "/settings", label: "Settings", key: "settings" as const, icon: Settings },
 ];
@@ -61,11 +74,12 @@ export function HelpdeskShell({
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = active === item.key;
+            const NavigationLink = item.key === "quality" ? "a" : Link;
             return (
-              <Link
+              <NavigationLink
                 key={item.key}
                 href={item.href}
-                className={`flex h-11 items-center gap-3 rounded-2xl px-3 text-[14px] font-semibold transition ${
+                className={`flex h-11 items-center gap-3 rounded-2xl px-3 text-[14px] font-semibold transition-[background-color,color,box-shadow] duration-150 ${
                   isActive
                     ? "bg-white text-[#24324a] shadow-sm"
                     : "text-white/72 hover:bg-white/10 hover:text-white"
@@ -73,7 +87,7 @@ export function HelpdeskShell({
               >
                 <Icon className="h-4 w-4" />
                 {item.label}
-              </Link>
+              </NavigationLink>
             );
           })}
         </nav>
@@ -105,8 +119,9 @@ export function HelpdeskShell({
                 {navItems.map((item) => {
                   const Icon = item.icon;
                   const isActive = active === item.key;
+                  const NavigationLink = item.key === "quality" ? "a" : Link;
                   return (
-                    <Link
+                    <NavigationLink
                       key={item.key}
                       href={item.href}
                       aria-label={item.label}
@@ -117,7 +132,7 @@ export function HelpdeskShell({
                       }`}
                     >
                       <Icon className="h-4 w-4" />
-                    </Link>
+                    </NavigationLink>
                   );
                 })}
               </nav>

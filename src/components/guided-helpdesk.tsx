@@ -22,10 +22,17 @@ import {
   X,
 } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import type { FormEvent, ReactNode, RefObject } from "react";
 import { HelpdeskShell } from "@/components/helpdesk-shell";
 import type { ShellSection } from "@/components/helpdesk-shell";
+import {
+  CompleteTicketDialog,
+  type CompletionEvidence,
+} from "@/components/jev/complete-ticket-dialog";
+import { CompletionReviewPanel } from "@/components/jev/completion-review-panel";
+import { IntakeAssessmentCard } from "@/components/jev/intake-assessment-card";
 import type {
   DashboardData,
   IncidentSnapshot,
@@ -275,6 +282,7 @@ function useDashboardState(
     ticketLimit?: number;
   } = {},
 ) {
+  const router = useRouter();
   const [data, setData] = useState(initialData);
   const [notice, setNotice] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -374,7 +382,7 @@ function useDashboardState(
       throw new Error(result.error ?? "Unable to create ticket");
     }
     await refresh();
-    window.location.href = `/tickets/${result.ticket.id}`;
+    router.push(`/tickets/${result.ticket.id}`);
     return result.ticket.ticket_number
       ? `Created TK-${result.ticket.ticket_number}`
       : "Request created";
@@ -426,7 +434,7 @@ function TicketTask({ ticket, nowMs }: { ticket: TicketQueueItem; nowMs: number 
   return (
     <Link
       href={`/tickets/${ticket.id}`}
-      className="group block rounded-2xl border border-[#e7dfd2] bg-white px-4 py-4 transition hover:-translate-y-0.5 hover:border-[#cfc4b4] hover:shadow-sm"
+      className="group block rounded-2xl border border-[#e7dfd2] bg-white px-4 py-4 transition-[transform,border-color,box-shadow] duration-150 hover:-translate-y-0.5 hover:border-[#cfc4b4] hover:shadow-sm active:scale-[0.99]"
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
@@ -1055,8 +1063,14 @@ export function TriageConsole({
     teamFilter !== "all" ||
     showBreachedOnly;
 
+  const humanTriageTickets = filteredTickets.filter(
+    (ticket) =>
+      isActive(ticket) &&
+      Boolean(ticket.intakeAssessment?.needsHumanTriage),
+  );
   const needsAttentionTickets = filteredTickets.filter((ticket) => {
     if (!isActive(ticket) || ticket.status === "waiting") return false;
+    if (humanTriageTickets.some((item) => item.id === ticket.id)) return false;
     return (
       ticket.priority === "P1" ||
       ticket.priority === "P2" ||
@@ -1070,7 +1084,10 @@ export function TriageConsole({
   );
   const nextUpTickets = filteredTickets.filter((ticket) => {
     if (!isActive(ticket) || ticket.status === "waiting") return false;
-    return !needsAttentionTickets.some((item) => item.id === ticket.id);
+    return (
+      !humanTriageTickets.some((item) => item.id === ticket.id) &&
+      !needsAttentionTickets.some((item) => item.id === ticket.id)
+    );
   });
   const resolvedTickets = filteredTickets.filter(
     (ticket) => ticket.status === "resolved",
@@ -1280,7 +1297,7 @@ export function TriageConsole({
                     setTeamFilter("all");
                     setShowBreachedOnly(true);
                   }}
-                  className="rounded-full border border-amber-100 bg-white px-3 py-1.5 text-[12px] font-bold text-amber-700 transition hover:bg-amber-50"
+                  className="rounded-full border border-amber-100 bg-white px-3 py-1.5 text-[12px] font-bold text-amber-700 transition-colors duration-150 hover:bg-amber-50"
                 >
                   Due now ({breachedTickets})
                 </button>
@@ -1310,6 +1327,7 @@ export function TriageConsole({
             </>
           ) : (
             <>
+              <WorkBucket title="Needs human triage" helper="Jev marked these tickets as ambiguous, low-confidence, unavailable, or outside the configured team map." tickets={humanTriageTickets} nowMs={nowMs} emptyMessage="No tickets need a person to confirm the route." />
               <WorkBucket title="Needs attention" helper="Pick from here first. These are new, urgent, unrouted, or due now." tickets={needsAttentionTickets} nowMs={nowMs} emptyMessage="Nothing needs immediate attention." />
               <WorkBucket title="Next up" helper="Open requests that are ready for someone to continue." tickets={nextUpTickets} nowMs={nowMs} emptyMessage="No other open requests match the current filters." />
               <WorkBucket title="Waiting" helper="Requests paused while the team waits for a reply or outside action." tickets={waitingTickets} nowMs={nowMs} emptyMessage="Nothing is waiting right now." />
@@ -1388,6 +1406,10 @@ export function TicketDetailConsole({
     addComment,
   } = useDashboardState(initialData, { ticketId });
   const [note, setNote] = useState("");
+  const [isCompletionOpen, setIsCompletionOpen] = useState(false);
+  const [completionStatus, setCompletionStatus] = useState<
+    "resolved" | "closed"
+  >("resolved");
   const ticket = data.tickets.find((item) => item.id === ticketId) ?? null;
   const incident = ticket?.incidentId
     ? data.incidents.find((item) => item.id === ticket.incidentId) ?? null
@@ -1405,6 +1427,24 @@ export function TicketDetailConsole({
       setNote("");
       return "Note added";
     });
+  }
+
+  function completeTicket(evidence: CompletionEvidence) {
+    if (!ticket) return;
+    runMutation(async () => {
+      await patchTicket(ticket.id, {
+        status: completionStatus,
+        comment: `${completionStatus === "closed" ? "Closed" : "Resolved"} from the helpdesk.`,
+        ...evidence,
+      });
+      setIsCompletionOpen(false);
+      return "Marked done and sent to Jev for review";
+    });
+  }
+
+  function requestCompletion(status: "resolved" | "closed") {
+    setCompletionStatus(status);
+    setIsCompletionOpen(true);
   }
 
   return (
@@ -1475,15 +1515,7 @@ export function TicketDetailConsole({
                     <button
                       type="button"
                       disabled={isPending || !canMutate}
-                      onClick={() =>
-                        runMutation(async () => {
-                          await patchTicket(ticket.id, {
-                            status: "resolved",
-                            comment: "Resolved from the helpdesk.",
-                          });
-                          return "Marked done";
-                        })
-                      }
+                      onClick={() => requestCompletion("resolved")}
                       className="btn-success inline-flex h-11 items-center justify-center gap-2 rounded-full px-4 text-sm font-bold disabled:opacity-60"
                     >
                       <CheckCircle2 className="h-4 w-4" />
@@ -1523,10 +1555,16 @@ export function TicketDetailConsole({
                     Open in RepairShopr
                   </Link>
                 ) : null}
-                <SelectField labelText={isRepairShoprTicket ? "Status (RepairShopr)" : "Status"} value={ticket.status} disabled={isPending || !canMutate || isRepairShoprTicket} onChange={(value) => runMutation(async () => {
-                  await patchTicket(ticket.id, { status: value, comment: `Status changed to ${label(value)}.` });
-                  return "Status updated";
-                })}>
+                <SelectField labelText={isRepairShoprTicket ? "Status (RepairShopr)" : "Status"} value={ticket.status} disabled={isPending || !canMutate || isRepairShoprTicket} onChange={(value) => {
+                  if (isActive(ticket) && (value === "resolved" || value === "closed")) {
+                    requestCompletion(value);
+                    return;
+                  }
+                  runMutation(async () => {
+                    await patchTicket(ticket.id, { status: value, comment: `Status changed to ${label(value)}.` });
+                    return "Status updated";
+                  });
+                }}>
                   {statuses.map((status) => (
                     <option key={status} value={status}>{statusLabel(status)}</option>
                   ))}
@@ -1560,12 +1598,105 @@ export function TicketDetailConsole({
               </div>
             </section>
 
+            {ticket.intakeAssessment && ticket.routingDecision ? (
+              <IntakeAssessmentCard
+                className="lg:col-span-2"
+                assessment={{
+                  status:
+                    ticket.intakeAssessment.status === "succeeded"
+                      ? ticket.intakeAssessment.needsHumanTriage
+                        ? "human_review"
+                        : "complete"
+                      : ticket.intakeAssessment.status === "not_configured"
+                        ? "unavailable"
+                        : ticket.intakeAssessment.status === "failed"
+                          ? "error"
+                          : "pending",
+                  issueType: ticket.intakeAssessment.issueType,
+                  urgency: ticket.intakeAssessment.urgency,
+                  suggestedTeam: ticket.intakeAssessment.suggestedTeam,
+                  confidence: ticket.intakeAssessment.confidence,
+                  model: ticket.intakeAssessment.model,
+                  assessedAt: ticket.intakeAssessment.assessedAt,
+                }}
+                routing={{
+                  assignedQueue: ticket.routingDecision.assignedTeam,
+                  priority: ticket.routingDecision.priority,
+                  responseDeadline: ticket.routingDecision.responseDueAt
+                    ? formatDateTime(ticket.routingDecision.responseDueAt)
+                    : null,
+                  needsHumanTriage:
+                    ticket.routingDecision.needsHumanTriage,
+                  routingReason: ticket.routingDecision.needsHumanTriage
+                    ? "The assessment was ambiguous, unavailable, or below the routing confidence threshold."
+                    : `${ticket.routingDecision.ruleVersion} applied the queue, priority, and deadline.`,
+                }}
+              />
+            ) : null}
+            {ticket.intakeAssessment?.needsHumanTriage ? (
+              <span className="inline-flex h-6 items-center gap-1 rounded-full bg-amber-50 px-2.5 text-[11px] font-bold text-amber-800 ring-1 ring-amber-200">
+                Human triage
+              </span>
+            ) : null}
+            {ticket.completionReview?.status === "succeeded" ? (
+              <span
+                className={`inline-flex h-6 items-center gap-1 rounded-full px-2.5 text-[11px] font-bold ring-1 ${
+                  ticket.completionReview.missingEvidenceCount > 0
+                    ? "bg-amber-50 text-amber-800 ring-amber-200"
+                    : "bg-emerald-50 text-emerald-700 ring-emerald-200"
+                }`}
+              >
+                {ticket.completionReview.missingEvidenceCount > 0
+                  ? "Missing evidence"
+                  : "Jev reviewed"}
+              </span>
+            ) : ticket.completionReview?.status === "failed" ||
+              ticket.completionReview?.status === "not_configured" ? (
+              <span className="inline-flex h-6 items-center gap-1 rounded-full bg-slate-50 px-2.5 text-[11px] font-bold text-slate-700 ring-1 ring-slate-200">
+                Review unavailable
+              </span>
+            ) : !isActive(ticket) ? (
+              <span className="inline-flex h-6 items-center gap-1 rounded-full bg-sky-50 px-2.5 text-[11px] font-bold text-sky-700 ring-1 ring-sky-200">
+                Review pending
+              </span>
+            ) : null}
+
             <section className="rounded-[28px] border border-[#e7dfd2] bg-white p-5 shadow-sm lg:col-span-2">
               <h3 className="text-lg font-bold text-[#1f2937]">Request</h3>
               <p className="mt-3 whitespace-pre-wrap text-[15px] leading-7 text-[#5f625d]">
                 {ticket.description || "No notes were included yet."}
               </p>
             </section>
+
+            {ticket.completionReview || !isActive(ticket) ? (
+              <CompletionReviewPanel
+                className="lg:col-span-2"
+                reviewStatus={
+                  ticket.completionReview?.status === "succeeded"
+                    ? "complete"
+                    : ticket.completionReview?.status === "failed"
+                      ? "error"
+                      : ticket.completionReview?.status === "not_configured"
+                        ? "unavailable"
+                        : "pending"
+                }
+                reviewedAt={
+                  ticket.completionReview?.reviewedAt
+                    ? formatDateTime(ticket.completionReview.reviewedAt)
+                    : null
+                }
+                model={ticket.completionReview?.model}
+                criteria={(ticket.completionReview?.criteria ?? []).map(
+                  (criterion) => ({
+                    id: criterion.id,
+                    label: criterion.label,
+                    status: criterion.outcome,
+                    score: criterion.score,
+                    maxScore: 3,
+                  }),
+                )}
+              />
+            ) : null}
 
             <section className="rounded-[28px] border border-[#e7dfd2] bg-white p-5 shadow-sm">
               <h3 className="text-lg font-bold text-[#1f2937]">Notes</h3>
@@ -1603,6 +1734,16 @@ export function TicketDetailConsole({
           </div>
         )}
       </section>
+      {isCompletionOpen ? (
+        <CompleteTicketDialog
+          open
+          ticketTitle={ticket?.title ?? "ticket"}
+          completionStatus={completionStatus}
+          pending={isPending}
+          onCancel={() => setIsCompletionOpen(false)}
+          onSubmit={completeTicket}
+        />
+      ) : null}
       <Notice message={notice} />
     </HelpdeskShell>
   );
@@ -1828,6 +1969,7 @@ const exampleProviders = [
 
 export function SettingsConsole({ initialData }: { initialData: DashboardData }) {
   const initialRepairShopr = initialData.integrations?.repairshopr;
+  const jevStatus = initialData.integrations?.jev;
   const [integrationTest, setIntegrationTest] = useState({
     webhookUrl: "",
     apiKey: "",
@@ -2089,6 +2231,53 @@ export function SettingsConsole({ initialData }: { initialData: DashboardData })
           <p className="mt-3 text-sm leading-6 text-[#737064]">
             Use your inbound webhook secret or Resend webhook secret in Vercel
             environment variables before sending live mail.
+          </p>
+        </SetupCard>
+
+        <SetupCard
+          icon={<Sparkles className="h-5 w-5" />}
+          title="Jev assessments"
+          helper="Use Jev once for incoming classification and again when a technician completes the ticket."
+        >
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            <StatusRow
+              label="Connection"
+              value={jevStatus?.configured ? "Configured" : "Key missing"}
+              good={Boolean(jevStatus?.configured)}
+            />
+            <StatusRow
+              label="Model"
+              value={jevStatus?.model ?? "jev-latest"}
+              good={Boolean(jevStatus?.configured)}
+            />
+            <StatusRow
+              label="Intake rubric"
+              value={jevStatus?.triageRubricVersion ?? "ticket-triage-v1"}
+              good
+            />
+            <StatusRow
+              label="Review rubric"
+              value={
+                jevStatus?.completionRubricVersion ??
+                "ticket-completion-review-v1"
+              }
+              good
+            />
+            <StatusRow
+              label="Procedures"
+              value={
+                jevStatus?.procedureVersion ??
+                "company-ticket-completion-v1"
+              }
+              good={Boolean(jevStatus?.customProceduresConfigured)}
+            />
+          </div>
+          <p className="mt-3 text-pretty text-sm leading-6 text-[#737064]">
+            Store <code className="font-mono text-[12px] text-[#24324a]">TYPESAFE_API_KEY</code>{" "}
+            on the server. Low-confidence intake stays in human triage. Missing
+            completion evidence is excluded from quality scores and shown as a
+            separate follow-up count. Common secrets and personal identifiers
+            are redacted before ticket text is sent to Jev.
           </p>
         </SetupCard>
 

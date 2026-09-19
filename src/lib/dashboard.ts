@@ -1,9 +1,14 @@
 import { getSql, hasDatabaseUrl } from "./db";
 import { getDemoDashboardData } from "./demo-store";
+import { getJevIntegrationStatus } from "./jev-assessments";
+import { ensureJevSchema } from "./jev-schema";
 import { ensureRepairShoprSchema, getRepairShoprStatus } from "./repairshopr";
 import type {
+  CompletionReviewCriterion,
   DashboardData,
   IncidentSnapshot,
+  JevAssessmentStatus,
+  JevUrgency,
   Priority,
   TicketComment,
   TicketQueueItem,
@@ -22,6 +27,8 @@ type MetricsRow = {
   p1_open: number | string | null;
   breached: number | string | null;
   avg_age_minutes: number | string | null;
+  needs_human_triage: number | string | null;
+  completion_reviews_pending: number | string | null;
 };
 
 type TicketRow = {
@@ -47,6 +54,21 @@ type TicketRow = {
   repairshopr_status: string | null;
   repairshopr_customer_name: string | null;
   duplicate_count: number | string | null;
+  issue_type?: string | null;
+  triage_confidence?: number | string | null;
+  triage_needs_human?: boolean | null;
+  intake_assessment_status?: string | null;
+  intake_model?: string | null;
+  intake_completed_at?: string | null;
+  intake_result?: unknown;
+  completion_assessment_status?: string | null;
+  completion_model?: string | null;
+  completion_rubric_version?: string | null;
+  completion_completed_at?: string | null;
+  completion_overall_score?: number | string | null;
+  completion_evidence_coverage?: number | string | null;
+  completion_missing_evidence_count?: number | string | null;
+  completion_result?: unknown;
 };
 
 type HighlightTicketRow = TicketRow & {
@@ -97,6 +119,76 @@ function toNumber(value: number | string | null | undefined) {
   return Number(value ?? 0);
 }
 
+function nullableNumber(value: number | string | null | undefined) {
+  if (value === null || value === undefined) return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function assessmentStatus(value: string | null | undefined): JevAssessmentStatus {
+  if (
+    value === "pending" ||
+    value === "running" ||
+    value === "succeeded" ||
+    value === "retryable" ||
+    value === "failed" ||
+    value === "not_configured" ||
+    value === "superseded"
+  ) {
+    return value;
+  }
+  return "pending";
+}
+
+function completionCriteria(value: unknown): CompletionReviewCriterion[] {
+  const result = asRecord(value);
+  const dimensions = asRecord(result?.dimensions);
+  if (!dimensions) return [];
+  const definitions = [
+    ["documentation", "documentation", "Documentation complete"],
+    [
+      "customerNextSteps",
+      "customer_next_steps",
+      "Customer given clear next steps",
+    ],
+    ["verification", "verification", "Required verification evidenced"],
+  ] as const;
+
+  return definitions.flatMap(([key, id, label]) => {
+    const dimension = asRecord(dimensions[key]);
+    const outcome = dimension?.outcome;
+    if (
+      !dimension ||
+      outcome !== "met" &&
+      outcome !== "not_met" &&
+      outcome !== "missing_evidence" &&
+      outcome !== "not_applicable"
+    ) {
+      return [];
+    }
+    return [
+      {
+        id,
+        label,
+        outcome,
+        score: nullableNumber(dimension.score as number | string | null),
+        evidenceProbability: nullableNumber(
+          dimension.evidenceProbability as number | string | null,
+        ),
+        confidence: nullableNumber(
+          dimension.confidence as number | string | null,
+        ),
+      } satisfies CompletionReviewCriterion,
+    ];
+  });
+}
+
 function toPriority(value: string): Priority {
   if (value === "P1" || value === "P2" || value === "P3" || value === "P4") {
     return value;
@@ -116,6 +208,11 @@ function mapTicketRow(
   ticket: TicketRow,
   comments: TicketComment[] = [],
 ): TicketQueueItem {
+  const intakeResult = asRecord(ticket.intake_result);
+  const intakeAssessment = asRecord(intakeResult?.assessment);
+  const routing = asRecord(intakeResult?.routing);
+  const hasIntakeAssessment = Boolean(ticket.intake_assessment_status);
+  const hasCompletionReview = Boolean(ticket.completion_assessment_status);
   return {
     id: ticket.id,
     incidentId: ticket.incident_id,
@@ -140,6 +237,70 @@ function mapTicketRow(
     repairshoprStatus: ticket.repairshopr_status,
     duplicateCount: toNumber(ticket.duplicate_count),
     comments,
+    intakeAssessment: hasIntakeAssessment
+      ? {
+          status: assessmentStatus(ticket.intake_assessment_status),
+          issueType:
+            (intakeAssessment?.issueType as string | null | undefined) ??
+            ticket.issue_type ??
+            null,
+          urgency:
+            (intakeAssessment?.urgency as JevUrgency | null | undefined) ?? null,
+          suggestedTeamId:
+            (intakeAssessment?.suggestedTeamId as string | null | undefined) ??
+            null,
+          suggestedTeam:
+            (intakeAssessment?.suggestedTeam as string | null | undefined) ??
+            null,
+          confidence:
+            nullableNumber(
+              asRecord(intakeAssessment?.confidences)?.minimum as
+                | number
+                | string
+                | null,
+            ) ?? nullableNumber(ticket.triage_confidence),
+          needsHumanTriage: Boolean(
+            intakeAssessment?.needsHumanTriage ?? ticket.triage_needs_human,
+          ),
+          model: ticket.intake_model ?? null,
+          assessedAt: ticket.intake_completed_at ?? null,
+        }
+      : null,
+    routingDecision: hasIntakeAssessment
+      ? {
+          priority: toPriority(
+            typeof routing?.priority === "string"
+              ? routing.priority
+              : ticket.priority,
+          ),
+          assignedTeamId: ticket.assigned_team_id,
+          assignedTeam: ticket.team,
+          assignedUserId: ticket.assigned_user_id,
+          assignedUser: ticket.assignee,
+          responseDueAt: ticket.sla_due_at,
+          needsHumanTriage: Boolean(ticket.triage_needs_human),
+          ruleVersion:
+            typeof routing?.ruleVersion === "string"
+              ? routing.ruleVersion
+              : "ticket-routing-v1",
+        }
+      : null,
+    completionReview: hasCompletionReview
+      ? {
+          status: assessmentStatus(ticket.completion_assessment_status),
+          overallScore: nullableNumber(ticket.completion_overall_score),
+          evidenceCoverage: nullableNumber(
+            ticket.completion_evidence_coverage,
+          ),
+          missingEvidenceCount: toNumber(
+            ticket.completion_missing_evidence_count,
+          ),
+          model: ticket.completion_model ?? null,
+          rubricVersion: ticket.completion_rubric_version ?? null,
+          reviewedAt: ticket.completion_completed_at ?? null,
+          criteria: completionCriteria(ticket.completion_result),
+        }
+      : null,
   };
 }
 
@@ -195,7 +356,7 @@ export async function getDashboardData(
 
   try {
     const sql = getSql();
-    await ensureRepairShoprSchema();
+    await Promise.all([ensureRepairShoprSchema(), ensureJevSchema()]);
 
     const [
       metricsRows,
@@ -236,7 +397,24 @@ export async function getDashboardData(
             round(avg(extract(epoch from (now() - created_at)) / 60)
               filter (where status not in ('resolved', 'closed')))::int,
             0
-          ) as avg_age_minutes
+          ) as avg_age_minutes,
+          count(*) filter (
+            where triage_needs_human
+              and status not in ('resolved', 'closed')
+          )::int as needs_human_triage,
+          (
+            select count(*)::int
+            from tickets review_ticket
+            where review_ticket.status in ('resolved', 'closed')
+              and not exists (
+                select 1
+                from jev_assessments review
+                where review.ticket_id = review_ticket.id
+                  and review.kind = 'completion_review'
+                  and review.completion_cycle = review_ticket.completion_cycle
+                  and review.status = 'succeeded'
+              )
+          ) as completion_reviews_pending
         from tickets
       `,
       sql`
@@ -265,13 +443,51 @@ export async function getDashboardData(
           t.repairshopr_url,
           t.repairshopr_status,
           rc.name as repairshopr_customer_name,
-          coalesce(count(ial.alert_event_id), 0)::int as duplicate_count
+          coalesce(count(ial.alert_event_id), 0)::int as duplicate_count,
+          t.issue_type,
+          t.triage_confidence,
+          t.triage_needs_human,
+          intake.status as intake_assessment_status,
+          intake.model as intake_model,
+          intake.completed_at::text as intake_completed_at,
+          intake.result as intake_result,
+          completion.status as completion_assessment_status,
+          completion.model as completion_model,
+          completion.rubric_version as completion_rubric_version,
+          completion.completed_at::text as completion_completed_at,
+          completion.overall_score as completion_overall_score,
+          completion.evidence_coverage as completion_evidence_coverage,
+          completion.missing_evidence_count as completion_missing_evidence_count,
+          completion.result as completion_result
         from tickets t
         left join users u on u.id = t.assigned_user_id
         left join teams tm on tm.id = t.assigned_team_id
         left join repairshopr_customers rc
           on rc.org_id = t.org_id
          and rc.repairshopr_customer_id = t.repairshopr_customer_id
+        left join lateral (
+          select status, model, completed_at, result
+          from jev_assessments assessment
+          where assessment.ticket_id = t.id and assessment.kind = 'triage'
+          order by assessment.created_at desc
+          limit 1
+        ) intake on true
+        left join lateral (
+          select
+            status,
+            model,
+            rubric_version,
+            completed_at,
+            overall_score,
+            evidence_coverage,
+            missing_evidence_count,
+            result
+          from jev_assessments assessment
+          where assessment.ticket_id = t.id
+            and assessment.kind = 'completion_review'
+          order by assessment.completion_cycle desc, assessment.created_at desc
+          limit 1
+        ) completion on true
         left join incident_alert_links ial on ial.incident_id = t.incident_id
         where (
           (${ticketId} <> '' and t.id::text = ${ticketId})
@@ -309,7 +525,22 @@ export async function getDashboardData(
           t.repairshopr_url,
           t.repairshopr_status,
           rc.name,
-          rc.email
+          rc.email,
+          t.issue_type,
+          t.triage_confidence,
+          t.triage_needs_human,
+          intake.status,
+          intake.model,
+          intake.completed_at,
+          intake.result,
+          completion.status,
+          completion.model,
+          completion.rubric_version,
+          completion.completed_at,
+          completion.overall_score,
+          completion.evidence_coverage,
+          completion.missing_evidence_count,
+          completion.result
         order by
           case
             when ${ticketScope} <> 'archive' and t.status in ('resolved', 'closed') then 2
@@ -527,6 +758,8 @@ export async function getDashboardData(
       p1_open: 0,
       breached: 0,
       avg_age_minutes: 0,
+      needs_human_triage: 0,
+      completion_reviews_pending: 0,
     };
     const typedTicketRows = ticketRows as TicketRow[];
     const typedHighlightRows = highlightRows as HighlightTicketRow[];
@@ -559,6 +792,10 @@ export async function getDashboardData(
         breached: toNumber(metrics.breached),
         resolved: toNumber(metrics.resolved_tickets),
         closed: toNumber(metrics.closed_tickets),
+        needsHumanTriage: toNumber(metrics.needs_human_triage),
+        completionReviewsPending: toNumber(
+          metrics.completion_reviews_pending,
+        ),
       },
       ticketPage: {
         limit: ticketLimit,
@@ -574,6 +811,7 @@ export async function getDashboardData(
                   toNumber(metrics.archived_tickets)),
       },
       integrations: {
+        jev: getJevIntegrationStatus(),
         repairshopr: {
           configured: repairshoprStatus.configured,
           connected: repairshoprStatus.connected,

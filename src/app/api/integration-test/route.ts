@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
+import { appAccessFailure, isAppAccessAuthorized } from "@/lib/manager-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -79,6 +80,7 @@ function defaultRecipientEmail() {
 }
 
 export async function POST(request: Request) {
+  if (!isAppAccessAuthorized(request)) return appAccessFailure();
   try {
     const payload = (await request.json()) as Record<string, unknown>;
     const webhookUrl = getWebhookUrl(payload.webhookUrl, request.url);

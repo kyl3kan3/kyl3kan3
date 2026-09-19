@@ -85,7 +85,7 @@ body {
   color: #ffffff;
   border: 1px solid #1b2638;
   box-shadow: 0 1px 2px rgba(36, 50, 74, 0.18);
-  transition: background 120ms ease, border-color 120ms ease, opacity 120ms ease;
+  transition: background 120ms ease, border-color 120ms ease, opacity 120ms ease, transform 120ms ease;
 }
 .btn-primary:hover:not(:disabled) {
   background: #1b2638;
@@ -93,6 +93,7 @@ body {
 }
 .btn-primary:active:not(:disabled) {
   background: #111827;
+  transform: scale(0.98);
 }
 
 .btn-soft {
@@ -100,11 +101,14 @@ body {
   color: #24324a;
   border: 1px solid var(--border-strong);
   box-shadow: 0 1px 2px rgba(36, 50, 74, 0.04);
-  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease, transform 120ms ease;
 }
 .btn-soft:hover:not(:disabled) {
   background: #fbfaf7;
   color: #111827;
+}
+.btn-soft:active:not(:disabled) {
+  transform: scale(0.98);
 }
 
 .btn-success {
@@ -112,10 +116,13 @@ body {
   color: #ffffff;
   border: 1px solid #047857;
   box-shadow: 0 1px 2px rgba(5, 150, 105, 0.16);
-  transition: background 120ms ease, border-color 120ms ease;
+  transition: background 120ms ease, border-color 120ms ease, transform 120ms ease;
 }
 .btn-success:hover:not(:disabled) {
   background: #047857;
+}
+.btn-success:active:not(:disabled) {
+  transform: scale(0.98);
 }
 
 .priority-p1 {

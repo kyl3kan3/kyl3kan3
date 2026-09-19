@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { addTicketComment } from "@/lib/operations";
+import { appAccessFailure, isAppAccessAuthorized } from "@/lib/manager-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -8,6 +9,7 @@ type RouteContext = {
 };
 
 export async function POST(request: Request, context: RouteContext) {
+  if (!isAppAccessAuthorized(request)) return appAccessFailure();
   try {
     const { id } = await context.params;
     const payload = (await request.json()) as Record<string, unknown>;

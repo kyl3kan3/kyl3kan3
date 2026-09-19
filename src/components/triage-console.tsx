@@ -23,6 +23,7 @@ import {
   XCircle,
 } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import type { FormEvent, ReactNode, RefObject } from "react";
 import { HelpdeskShell } from "@/components/helpdesk-shell";
@@ -642,6 +643,7 @@ function NewTicketModal({
 }
 
 function useDashboardState(initialData: DashboardData) {
+  const router = useRouter();
   const [data, setData] = useState(initialData);
   const [notice, setNotice] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -705,7 +707,7 @@ function useDashboardState(initialData: DashboardData) {
     }
 
     await refresh();
-    window.location.href = `/tickets/${result.ticket.id}`;
+    router.push(`/tickets/${result.ticket.id}`);
     return result.ticket.ticket_number
       ? `Created TK-${result.ticket.ticket_number}`
       : "Ticket created";

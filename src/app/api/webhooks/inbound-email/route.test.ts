@@ -9,7 +9,7 @@ function restoreEnv(
     | "ALLOWED_INBOUND_RECIPIENTS"
     | "DATABASE_URL"
     | "INBOUND_WEBHOOK_SECRET"
-    | "OPENAI_API_KEY"
+    | "TYPESAFE_API_KEY"
     | "RESEND_WEBHOOK_SECRET",
   value: string | undefined,
 ) {
@@ -71,12 +71,12 @@ test("rejects invalid signed Svix JSON webhook payloads with 400", async (t) => 
   assert.match(String(body.error), /json|unexpected|expected|valid/i);
 });
 
-test("treats high priority immediate email language as P1 without AI", async (t) => {
+test("keeps urgent tickets P1 and sends them to human triage when Jev is not configured", async (t) => {
   const originalDatabaseUrl = process.env.DATABASE_URL;
-  const originalOpenAiKey = process.env.OPENAI_API_KEY;
+  const originalTypesafeKey = process.env.TYPESAFE_API_KEY;
   const originalInboundSecret = process.env.INBOUND_WEBHOOK_SECRET;
   delete process.env.DATABASE_URL;
-  delete process.env.OPENAI_API_KEY;
+  delete process.env.TYPESAFE_API_KEY;
   delete process.env.INBOUND_WEBHOOK_SECRET;
   t.after(() => {
     restoreEnv("INBOUND_WEBHOOK_SECRET", originalInboundSecret);
@@ -85,11 +85,7 @@ test("treats high priority immediate email language as P1 without AI", async (t)
     } else {
       process.env.DATABASE_URL = originalDatabaseUrl;
     }
-    if (originalOpenAiKey === undefined) {
-      delete process.env.OPENAI_API_KEY;
-    } else {
-      process.env.OPENAI_API_KEY = originalOpenAiKey;
-    }
+    restoreEnv("TYPESAFE_API_KEY", originalTypesafeKey);
   });
 
   const response = await POST(
@@ -106,31 +102,36 @@ test("treats high priority immediate email language as P1 without AI", async (t)
   );
   const body = (await response.json()) as {
     priority?: string;
-    ai?: { usedAi?: boolean; fallbackReason?: string | null };
+    jev?: {
+      usedAi?: boolean;
+      fallbackReason?: string | null;
+      needsHumanTriage?: boolean;
+    };
   };
 
   assert.equal(response.status, 202);
   assert.equal(body.priority, "P1");
-  assert.equal(body.ai?.usedAi, false);
-  assert.equal(body.ai?.fallbackReason, "missing_openai_api_key");
+  assert.equal(body.jev?.usedAi, false);
+  assert.equal(body.jev?.fallbackReason, "missing_typesafe_api_key");
+  assert.equal(body.jev?.needsHumanTriage, true);
 });
 
 test("rejects email sent to a recipient outside the allowed inbound domain", async (t) => {
   const originalAllowedDomains = process.env.ALLOWED_INBOUND_RECIPIENT_DOMAINS;
   const originalAllowedRecipients = process.env.ALLOWED_INBOUND_RECIPIENTS;
   const originalDatabaseUrl = process.env.DATABASE_URL;
-  const originalOpenAiKey = process.env.OPENAI_API_KEY;
+  const originalTypesafeKey = process.env.TYPESAFE_API_KEY;
   const originalInboundSecret = process.env.INBOUND_WEBHOOK_SECRET;
   process.env.ALLOWED_INBOUND_RECIPIENT_DOMAINS = "inbound.decent4.com";
   delete process.env.ALLOWED_INBOUND_RECIPIENTS;
   delete process.env.DATABASE_URL;
-  delete process.env.OPENAI_API_KEY;
+  delete process.env.TYPESAFE_API_KEY;
   delete process.env.INBOUND_WEBHOOK_SECRET;
   t.after(() => {
     restoreEnv("ALLOWED_INBOUND_RECIPIENT_DOMAINS", originalAllowedDomains);
     restoreEnv("ALLOWED_INBOUND_RECIPIENTS", originalAllowedRecipients);
     restoreEnv("DATABASE_URL", originalDatabaseUrl);
-    restoreEnv("OPENAI_API_KEY", originalOpenAiKey);
+    restoreEnv("TYPESAFE_API_KEY", originalTypesafeKey);
     restoreEnv("INBOUND_WEBHOOK_SECRET", originalInboundSecret);
   });
 
@@ -162,18 +163,18 @@ test("accepts email sent to the allowed inbound domain", async (t) => {
   const originalAllowedDomains = process.env.ALLOWED_INBOUND_RECIPIENT_DOMAINS;
   const originalAllowedRecipients = process.env.ALLOWED_INBOUND_RECIPIENTS;
   const originalDatabaseUrl = process.env.DATABASE_URL;
-  const originalOpenAiKey = process.env.OPENAI_API_KEY;
+  const originalTypesafeKey = process.env.TYPESAFE_API_KEY;
   const originalInboundSecret = process.env.INBOUND_WEBHOOK_SECRET;
   process.env.ALLOWED_INBOUND_RECIPIENT_DOMAINS = "inbound.decent4.com";
   delete process.env.ALLOWED_INBOUND_RECIPIENTS;
   delete process.env.DATABASE_URL;
-  delete process.env.OPENAI_API_KEY;
+  delete process.env.TYPESAFE_API_KEY;
   delete process.env.INBOUND_WEBHOOK_SECRET;
   t.after(() => {
     restoreEnv("ALLOWED_INBOUND_RECIPIENT_DOMAINS", originalAllowedDomains);
     restoreEnv("ALLOWED_INBOUND_RECIPIENTS", originalAllowedRecipients);
     restoreEnv("DATABASE_URL", originalDatabaseUrl);
-    restoreEnv("OPENAI_API_KEY", originalOpenAiKey);
+    restoreEnv("TYPESAFE_API_KEY", originalTypesafeKey);
     restoreEnv("INBOUND_WEBHOOK_SECRET", originalInboundSecret);
   });
 

@@ -9,6 +9,66 @@ export type TicketStatus =
   | "resolved"
   | "closed";
 
+export type JevAssessmentStatus =
+  | "pending"
+  | "running"
+  | "succeeded"
+  | "retryable"
+  | "failed"
+  | "not_configured"
+  | "superseded";
+
+export type JevUrgency = "critical" | "high" | "normal" | "low";
+
+export type JevIntakeAssessment = {
+  status: JevAssessmentStatus;
+  issueType: string | null;
+  urgency: JevUrgency | null;
+  suggestedTeamId: string | null;
+  suggestedTeam: string | null;
+  confidence: number | null;
+  needsHumanTriage: boolean;
+  model: string | null;
+  assessedAt: string | null;
+};
+
+export type SoftwareRoutingDecision = {
+  priority: Priority;
+  assignedTeamId: string | null;
+  assignedTeam: string | null;
+  assignedUserId: string | null;
+  assignedUser: string | null;
+  responseDueAt: string | null;
+  needsHumanTriage: boolean;
+  ruleVersion: string;
+};
+
+export type ReviewCriterionOutcome =
+  | "met"
+  | "not_met"
+  | "missing_evidence"
+  | "not_applicable";
+
+export type CompletionReviewCriterion = {
+  id: "documentation" | "customer_next_steps" | "verification";
+  label: string;
+  outcome: ReviewCriterionOutcome;
+  score: number | null;
+  evidenceProbability: number | null;
+  confidence: number | null;
+};
+
+export type JevCompletionReview = {
+  status: JevAssessmentStatus;
+  overallScore: number | null;
+  evidenceCoverage: number | null;
+  missingEvidenceCount: number;
+  model: string | null;
+  rubricVersion: string | null;
+  reviewedAt: string | null;
+  criteria: CompletionReviewCriterion[];
+};
+
 export type TicketQueueItem = {
   id: string;
   incidentId: string | null;
@@ -33,6 +93,9 @@ export type TicketQueueItem = {
   repairshoprStatus?: string | null;
   duplicateCount: number;
   comments: TicketComment[];
+  intakeAssessment: JevIntakeAssessment | null;
+  routingDecision: SoftwareRoutingDecision | null;
+  completionReview: JevCompletionReview | null;
 };
 
 export type TicketComment = {
@@ -102,6 +165,8 @@ export type DashboardData = {
     breached: number;
     resolved: number;
     closed: number;
+    needsHumanTriage: number;
+    completionReviewsPending: number;
   };
   ticketPage: {
     limit: number;
@@ -109,6 +174,14 @@ export type DashboardData = {
     hasMore: boolean;
   };
   integrations?: {
+    jev?: {
+      configured: boolean;
+      model: string;
+      triageRubricVersion: string;
+      completionRubricVersion: string;
+      procedureVersion: string;
+      customProceduresConfigured: boolean;
+    };
     repairshopr?: {
       configured: boolean;
       connected: boolean;
@@ -127,5 +200,39 @@ export type DashboardData = {
   teamLoad: TeamLoad[];
   teams: TeamOption[];
   users: UserOption[];
+  dbError?: string;
+};
+
+export type ManagerQualityRow = {
+  technicianId: string;
+  technician: string;
+  role: UserRole;
+  issueType: string;
+  model: string;
+  rubricVersion: string;
+  procedureVersion: string;
+  handledTickets: number;
+  medianResponseMinutes: number | null;
+  averageResponseMinutes: number | null;
+  reopenedTickets: number;
+  reopenedRate: number | null;
+  reviewedTickets: number;
+  scoredCriteria: number;
+  qualityScore: number | null;
+  evidenceCoverage: number | null;
+  missingEvidenceCount: number;
+};
+
+export type ManagerQualityData = {
+  source: "database" | "demo";
+  refreshedAt: string;
+  windowDays: number;
+  summary: {
+    handledTickets: number;
+    reviewedTickets: number;
+    missingEvidenceCount: number;
+    evidenceCoverage: number | null;
+  };
+  rows: ManagerQualityRow[];
   dbError?: string;
 };

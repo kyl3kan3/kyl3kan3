@@ -1,5 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { getSql, hasDatabaseUrl } from "./db";
+import {
+  createCompletionAssessment,
+  enqueueTicketTriage,
+} from "./jev-assessments";
+import { ensureJevSchema } from "./jev-schema";
 import type { Priority, TicketStatus } from "./types";
 
 type IdRow = { id: string };
@@ -11,6 +16,11 @@ type SyncRunRow = {
 };
 type SyncLockRow = { lock_token: string };
 type SchemaReadyRow = { ready: boolean };
+type MirroredTicketRow = {
+  id: string;
+  status: TicketStatus;
+  completion_cycle: number | string;
+};
 
 export type RepairShoprConfig = {
   configured: boolean;
@@ -630,6 +640,13 @@ async function upsertCustomer(orgId: string, customer: RepairShoprCustomer) {
 
 async function upsertTicket(orgId: string, ticket: RepairShoprTicket) {
   const sql = getSql();
+  const existingRows = (await sql`
+    select id::text, status, completion_cycle
+    from tickets
+    where org_id = ${orgId} and repairshopr_ticket_id = ${ticket.id}
+    limit 1
+  `) as MirroredTicketRow[];
+  const existing = existingRows[0] ?? null;
   await sql`
     insert into tickets (
       org_id,
@@ -693,6 +710,103 @@ async function upsertTicket(orgId: string, ticket: RepairShoprTicket) {
       where tickets.repairshopr_updated_at is distinct from excluded.repairshopr_updated_at
          or tickets.repairshopr_payload is distinct from excluded.repairshopr_payload
   `;
+
+  const mirroredRows = (await sql`
+    select id::text, status, completion_cycle
+    from tickets
+    where org_id = ${orgId} and repairshopr_ticket_id = ${ticket.id}
+    limit 1
+  `) as MirroredTicketRow[];
+  const mirrored = mirroredRows[0];
+  if (!mirrored) return;
+
+  if (!existing) {
+    await sql`
+      insert into ticket_status_events (
+        org_id,
+        ticket_id,
+        from_status,
+        to_status,
+        completion_cycle,
+        source,
+        metadata
+      ) values (
+        ${orgId},
+        ${mirrored.id},
+        null,
+        ${ticket.status},
+        0,
+        'repairshopr',
+        ${JSON.stringify({ repairshoprTicketId: ticket.id })}::jsonb
+      )
+    `;
+    await enqueueTicketTriage({
+      orgId,
+      ticketId: mirrored.id,
+      ticket: {
+        title: ticket.title,
+        description: ticket.description,
+        source: "repairshopr",
+        service: "support_portal",
+        severity: ticket.priority,
+      },
+      fallbackPriority: ticket.priority,
+      idempotencyKey: `triage:${mirrored.id}:repairshopr:${ticket.id}`,
+    });
+  }
+
+  const wasComplete =
+    existing?.status === "resolved" || existing?.status === "closed";
+  const isComplete = ticket.status === "resolved" || ticket.status === "closed";
+  if (existing && existing.status !== ticket.status) {
+    let completionCycle = Number(existing.completion_cycle ?? 0);
+    const completing = !wasComplete && isComplete;
+    const reopening = wasComplete && !isComplete;
+    const rows = (await sql`
+      update tickets
+      set
+        completion_cycle = completion_cycle + ${completing ? 1 : 0},
+        reopened_count = reopened_count + ${reopening ? 1 : 0},
+        resolved_at = case
+          when ${completing} then now()
+          when ${reopening} then null
+          else resolved_at
+        end
+      where id = ${mirrored.id}
+      returning completion_cycle
+    `) as Array<{ completion_cycle: number | string }>;
+    completionCycle = Number(rows[0]?.completion_cycle ?? completionCycle);
+    await sql`
+      insert into ticket_status_events (
+        org_id,
+        ticket_id,
+        from_status,
+        to_status,
+        completion_cycle,
+        source,
+        metadata
+      ) values (
+        ${orgId},
+        ${mirrored.id},
+        ${existing.status},
+        ${ticket.status},
+        ${completionCycle},
+        'repairshopr',
+        ${JSON.stringify({ repairshoprTicketId: ticket.id, reopening })}::jsonb
+      )
+    `;
+    if (completing) {
+      await createCompletionAssessment({
+        orgId,
+        ticketId: mirrored.id,
+        completionCycle,
+        resolutionSummary: ticket.description,
+        customerNextSteps: null,
+        verificationEvidence: null,
+        technicianUserId: null,
+      });
+    }
+  }
 }
 
 async function acquireSyncLock(orgId: string) {
@@ -800,7 +914,7 @@ export async function syncRepairShopr(): Promise<RepairShoprSyncResult> {
     throw new Error("RepairShopr subdomain and API key are required");
   }
 
-  await ensureRepairShoprSchema();
+  await Promise.all([ensureRepairShoprSchema(), ensureJevSchema()]);
   const sql = getSql();
   const orgId = await ensureDefaultOrg();
   const lockToken = await acquireSyncLock(orgId);

@@ -3,6 +3,20 @@ import test from "node:test";
 import { classifyTicketWithJev, reviewCompletedWorkWithJev } from "./jev";
 import { isJevConfigured, jevGatewayCredential } from "./jev-config";
 
+test("reads rotating Vercel request-context credentials", (t) => {
+  const symbol=Symbol.for("@vercel/request-context");
+  const globals=globalThis as unknown as Record<symbol, unknown>;
+  const prior=globals[symbol];
+  const key=process.env.AI_GATEWAY_API_KEY;
+  delete process.env.AI_GATEWAY_API_KEY;
+  t.after(()=>{if(prior===undefined)delete globals[symbol];else globals[symbol]=prior;if(key===undefined)delete process.env.AI_GATEWAY_API_KEY;else process.env.AI_GATEWAY_API_KEY=key;});
+  let token="first-request";
+  globals[symbol]={get:()=>({headers:{"x-vercel-oidc-token":token}})};
+  assert.equal(jevGatewayCredential(),"first-request");
+  token="second-request";
+  assert.equal(jevGatewayCredential(),"second-request");
+});
+
 test("both Jev stages use Gateway credentials and preserve typed answers", async (t) => {
   const keys = ["AI_GATEWAY_API_KEY", "VERCEL_OIDC_TOKEN", "TYPESAFE_API_KEY", "JEV_MODEL"];
   const before = keys.map((key) => process.env[key]);

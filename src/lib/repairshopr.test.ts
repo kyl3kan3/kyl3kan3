@@ -129,7 +129,7 @@ test("sends the API token in the Authorization header, not the URL", async (t) =
   await testRepairShoprConnection();
 
   assert.equal(new URL(requestedUrl).searchParams.has("api_key"), false);
-  assert.equal(requestedAuthorization, "private-token");
+  assert.equal(requestedAuthorization, "Bearer private-token");
 });
 
 test("falls back to the documented query authentication when needed", async (t) => {

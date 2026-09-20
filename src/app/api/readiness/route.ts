@@ -2,11 +2,11 @@ import { NextResponse } from "next/server";
 import { getSql, hasDatabaseUrl } from "@/lib/db";
 import { isManagerDashboardAuthorized, managerDashboardAccessFailure } from "@/lib/manager-auth";
 import { isJevConfigured } from "@/lib/jev-config";
-import { classifyTicketWithJev } from "@/lib/jev";
+import { classifyTicketWithJev, reviewCompletedWorkWithJev } from "@/lib/jev";
 import { getRepairShoprConfig, testRepairShoprConnection } from "@/lib/repairshopr";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 export async function GET(request: Request) {
   if (!isManagerDashboardAuthorized(request)) return managerDashboardAccessFailure();
@@ -34,11 +34,15 @@ export async function POST(request: Request) {
   if (!isManagerDashboardAuthorized(request)) return managerDashboardAccessFailure();
   // Synthetic sample only: no ticket or employee data is created or modified.
   const jev=await classifyTicketWithJev({ticket:{title:"Synthetic readiness test: application will not open",description:"A single user needs help opening a desktop application."},teams:[{id:"readiness-helpdesk",name:"Helpdesk"}]});
+  const review=await reviewCompletedWorkWithJev({ticket:{title:"Synthetic readiness test",issueType:"software"},
+    history:[{at:new Date().toISOString(),action:"technician completion note",actor:"synthetic technician",evidence:"Repaired the application installation. Opened the application twice and confirmed it launched successfully. Told the customer they can resume work and reply if the issue returns."}],
+    procedures:["Record actions, verification results, and customer next steps."]});
+  const jevPassed=jev.status==="succeeded" && review.status==="succeeded";
   let repairshopr: string="credentials_missing";
   if(getRepairShoprConfig().configured) {
     try { await testRepairShoprConnection();repairshopr="verified"; }
     catch { repairshopr="failed: check subdomain, API key, and customer/ticket/user read permissions"; }
   }
-  return NextResponse.json({ok:jev.status==="succeeded" && repairshopr==="verified",jev:{status:jev.status,error:jev.error},repairshopr},
+  return NextResponse.json({ok:jevPassed && repairshopr==="verified",jev:{status:jevPassed?"succeeded":"failed",error:jev.error ?? review.error,triage:jev.status,completionReview:review.status},repairshopr},
     {headers:{"cache-control":"no-store"}});
 }

@@ -502,7 +502,7 @@ async function repairShoprFetch(path: string, params: Record<string, string>) {
     const requestUrl = new URL(url);
     const headers: Record<string, string> = { accept: "application/json" };
     if (mode === "header") {
-      headers.authorization = apiKey;
+      headers.authorization = `Bearer ${queryApiKey}`;
     } else {
       requestUrl.searchParams.set("api_key", queryApiKey);
     }
@@ -757,6 +757,8 @@ export async function syncRepairShopr(): Promise<RepairShoprSyncResult> {
   await ensureRepairShoprWorkflowSchema();
   const sql = getSql();
   const orgId = await ensureDefaultOrg();
+  // Do not bind an organization to a mistyped or unauthenticated account.
+  await repairShoprFetch("/users", { page: "1" });
   await bindRepairShoprAccount(orgId, config.subdomain!);
   const lockToken = await acquireSyncLock(orgId);
   let runId: string | null = null;

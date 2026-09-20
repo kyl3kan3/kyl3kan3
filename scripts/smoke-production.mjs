@@ -40,3 +40,7 @@ const live=await request('/api/readiness','MANAGER_DASHBOARD_PASSWORD','POST');
 assert.equal(live.status,200);const result=await live.json();
 console.log('Live provider checks:',JSON.stringify(result));
 assert.equal(result.jev.status,'succeeded','Live Jev Gateway evaluation failed');
+assert.equal(result.jev.completionReview,'succeeded','Live Jev completion review failed');
+const worker=await request('/api/jobs/jev-assessments','CRON_SECRET');
+assert.equal(worker.status,200);const jobs=await worker.json();assert.equal(jobs.ok,true);
+console.log('Scheduled Jev assessment worker healthy');

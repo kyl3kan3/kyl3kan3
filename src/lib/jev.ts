@@ -1,10 +1,11 @@
+import { jevGatewayCredential } from "./jev-config";
 import type { Priority } from "./types";
 
-export const JEV_ENDPOINT = "https://api.typesafe.ai/v1/systemone";
+export const JEV_ENDPOINT = "https://ai-gateway.vercel.sh/typesafe/v1/systemone";
 export const JEV_TRIAGE_RUBRIC_VERSION = "ticket-triage-v1";
 export const JEV_COMPLETION_REVIEW_RUBRIC_VERSION =
   "ticket-completion-review-v1";
-export const JEV_DEFAULT_MODEL = "jev-latest";
+export const JEV_DEFAULT_MODEL = "typesafe-ai/jev";
 export const JEV_DEFAULT_TIMEOUT_MS = 10_000;
 export const JEV_DEFAULT_TRIAGE_CONFIDENCE_THRESHOLD = 0.35;
 export const JEV_DEFAULT_EVIDENCE_THRESHOLD = 0.65;
@@ -544,6 +545,8 @@ async function postToJev(
     try {
       const response = await fetch(JEV_ENDPOINT, {
         method: "POST",
+        cache: "no-store",
+        redirect: "error",
         headers: {
           accept: "application/json",
           authorization: `Bearer ${apiKey}`,
@@ -584,11 +587,11 @@ export async function classifyTicketWithJev(
   input: JevTriageInput,
 ): Promise<JevTriageResult> {
   const model = modelFromEnvironment();
-  const apiKey = process.env.TYPESAFE_API_KEY?.trim();
+  const apiKey = jevGatewayCredential();
 
   if (!apiKey) {
     return {
-      ...failedTriage(model, "missing_typesafe_api_key", null),
+      ...failedTriage(model, "missing_ai_gateway_credentials", null),
       status: "not_configured",
     };
   }
@@ -837,11 +840,11 @@ export async function reviewCompletedWorkWithJev(
   input: JevCompletionReviewInput,
 ): Promise<JevCompletionReviewResult> {
   const model = modelFromEnvironment();
-  const apiKey = process.env.TYPESAFE_API_KEY?.trim();
+  const apiKey = jevGatewayCredential();
 
   if (!apiKey) {
     return {
-      ...failedReview(model, "missing_typesafe_api_key", null),
+      ...failedReview(model, "missing_ai_gateway_credentials", null),
       status: "not_configured",
     };
   }

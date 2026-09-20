@@ -48,7 +48,7 @@ The app is build-safe without `DATABASE_URL`; it falls back to demo data until N
 
 `RESEND_WEBHOOK_SECRET` is recommended for Resend Inbound. When Resend's `svix-*` headers are present, the app verifies the raw webhook body before processing it.
 
-`TYPESAFE_API_KEY` enables Jev assessment through TypeSafe's server-side API. `JEV_MODEL` defaults to `jev-latest`; pin a version in production when calibrated thresholds must remain stable. `JEV_TRIAGE_CONFIDENCE_THRESHOLD` controls when classification is sent to human triage, and `JEV_EVIDENCE_THRESHOLD` controls whether a completion-review dimension has enough evidence to score. The key is never exposed to the browser.
+`AI_GATEWAY_API_KEY` enables Jev assessment through Vercel AI Gateway's TypeSafe-compatible API (`https://ai-gateway.vercel.sh/typesafe/v1/systemone`). Vercel's `VERCEL_OIDC_TOKEN` is also supported when no Gateway API key is set. Direct TypeSafe API keys are no longer used. See [Vercel's migration guide](https://vercel.com/docs/ai-gateway/sdks-and-apis/typesafe). `JEV_MODEL` defaults to `typesafe-ai/jev`; pin a version in production when calibrated thresholds must remain stable. `JEV_TRIAGE_CONFIDENCE_THRESHOLD` controls when classification is sent to human triage, and `JEV_EVIDENCE_THRESHOLD` controls whether a completion-review dimension has enough evidence to score. The key is never exposed to the browser.
 
 `JEV_REVIEW_PROCEDURES_JSON` supplies the company's completion procedures as either a JSON array used for every ticket or an object keyed by issue type with a `default` array. Set `JEV_REVIEW_PROCEDURE_VERSION` whenever the procedure changes. Each assessment snapshots the procedure text and version, and manager cohorts keep different model, rubric, and procedure versions separate.
 
@@ -99,7 +99,7 @@ The Jev assessment retry job accepts `Authorization: Bearer <CRON_SECRET|JEV_JOB
 
 Recommended Vercel + Neon path:
 
-1. Deploy the app to Vercel and set `DATABASE_URL` plus `TYPESAFE_API_KEY`. For generic providers set `INBOUND_WEBHOOK_SECRET`; for Resend set `RESEND_API_KEY` and `RESEND_WEBHOOK_SECRET`.
+1. Deploy the app to Vercel and set `DATABASE_URL` plus `AI_GATEWAY_API_KEY`. For generic providers set `INBOUND_WEBHOOK_SECRET`; for Resend set `RESEND_API_KEY` and `RESEND_WEBHOOK_SECRET`.
 2. In Neon, apply `db/schema.sql`. Use the pooled Neon connection string for `DATABASE_URL` in Vercel.
 3. In your email provider, point inbound webhooks to:
 

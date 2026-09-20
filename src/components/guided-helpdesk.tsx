@@ -2523,7 +2523,7 @@ export function SettingsConsole({
             />
             <StatusRow
               label="Model"
-              value={jevStatus?.model ?? "jev-latest"}
+              value={jevStatus?.model ?? "typesafe-ai/jev"}
               good={Boolean(jevStatus?.configured)}
             />
             <StatusRow
@@ -2550,9 +2550,9 @@ export function SettingsConsole({
           <p className="mt-3 text-pretty text-sm leading-6 text-ink-muted">
             Store{" "}
             <code className="font-mono text-[12px] text-ink">
-              TYPESAFE_API_KEY
+              AI_GATEWAY_API_KEY
             </code>{" "}
-            on the server. Low-confidence intake stays in human triage. Missing
+            on the server, or use Vercel OIDC, to route Jev through AI Gateway. Low-confidence intake stays in human triage. Missing
             completion evidence is excluded from quality scores and shown as a
             separate follow-up count. Common secrets and personal identifiers
             are redacted before ticket text is sent to Jev.

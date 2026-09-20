@@ -9,7 +9,8 @@ function restoreEnv(
     | "ALLOWED_INBOUND_RECIPIENTS"
     | "DATABASE_URL"
     | "INBOUND_WEBHOOK_SECRET"
-    | "TYPESAFE_API_KEY"
+    | "AI_GATEWAY_API_KEY"
+    | "VERCEL_OIDC_TOKEN"
     | "RESEND_WEBHOOK_SECRET",
   value: string | undefined,
 ) {
@@ -73,10 +74,12 @@ test("rejects invalid signed Svix JSON webhook payloads with 400", async (t) => 
 
 test("keeps urgent tickets P1 and sends them to human triage when Jev is not configured", async (t) => {
   const originalDatabaseUrl = process.env.DATABASE_URL;
-  const originalTypesafeKey = process.env.TYPESAFE_API_KEY;
+  const originalGatewayKey = process.env.AI_GATEWAY_API_KEY;
+  const originalOidcToken = process.env.VERCEL_OIDC_TOKEN;
   const originalInboundSecret = process.env.INBOUND_WEBHOOK_SECRET;
   delete process.env.DATABASE_URL;
-  delete process.env.TYPESAFE_API_KEY;
+  delete process.env.AI_GATEWAY_API_KEY;
+  delete process.env.VERCEL_OIDC_TOKEN;
   delete process.env.INBOUND_WEBHOOK_SECRET;
   t.after(() => {
     restoreEnv("INBOUND_WEBHOOK_SECRET", originalInboundSecret);
@@ -85,7 +88,8 @@ test("keeps urgent tickets P1 and sends them to human triage when Jev is not con
     } else {
       process.env.DATABASE_URL = originalDatabaseUrl;
     }
-    restoreEnv("TYPESAFE_API_KEY", originalTypesafeKey);
+    restoreEnv("AI_GATEWAY_API_KEY", originalGatewayKey);
+    restoreEnv("VERCEL_OIDC_TOKEN", originalOidcToken);
   });
 
   const response = await POST(
@@ -112,7 +116,7 @@ test("keeps urgent tickets P1 and sends them to human triage when Jev is not con
   assert.equal(response.status, 202);
   assert.equal(body.priority, "P1");
   assert.equal(body.jev?.usedAi, false);
-  assert.equal(body.jev?.fallbackReason, "missing_typesafe_api_key");
+  assert.equal(body.jev?.fallbackReason, "missing_ai_gateway_credentials");
   assert.equal(body.jev?.needsHumanTriage, true);
 });
 
@@ -120,18 +124,21 @@ test("rejects email sent to a recipient outside the allowed inbound domain", asy
   const originalAllowedDomains = process.env.ALLOWED_INBOUND_RECIPIENT_DOMAINS;
   const originalAllowedRecipients = process.env.ALLOWED_INBOUND_RECIPIENTS;
   const originalDatabaseUrl = process.env.DATABASE_URL;
-  const originalTypesafeKey = process.env.TYPESAFE_API_KEY;
+  const originalGatewayKey = process.env.AI_GATEWAY_API_KEY;
+  const originalOidcToken = process.env.VERCEL_OIDC_TOKEN;
   const originalInboundSecret = process.env.INBOUND_WEBHOOK_SECRET;
   process.env.ALLOWED_INBOUND_RECIPIENT_DOMAINS = "inbound.decent4.com";
   delete process.env.ALLOWED_INBOUND_RECIPIENTS;
   delete process.env.DATABASE_URL;
-  delete process.env.TYPESAFE_API_KEY;
+  delete process.env.AI_GATEWAY_API_KEY;
+  delete process.env.VERCEL_OIDC_TOKEN;
   delete process.env.INBOUND_WEBHOOK_SECRET;
   t.after(() => {
     restoreEnv("ALLOWED_INBOUND_RECIPIENT_DOMAINS", originalAllowedDomains);
     restoreEnv("ALLOWED_INBOUND_RECIPIENTS", originalAllowedRecipients);
     restoreEnv("DATABASE_URL", originalDatabaseUrl);
-    restoreEnv("TYPESAFE_API_KEY", originalTypesafeKey);
+    restoreEnv("AI_GATEWAY_API_KEY", originalGatewayKey);
+    restoreEnv("VERCEL_OIDC_TOKEN", originalOidcToken);
     restoreEnv("INBOUND_WEBHOOK_SECRET", originalInboundSecret);
   });
 
@@ -163,18 +170,21 @@ test("accepts email sent to the allowed inbound domain", async (t) => {
   const originalAllowedDomains = process.env.ALLOWED_INBOUND_RECIPIENT_DOMAINS;
   const originalAllowedRecipients = process.env.ALLOWED_INBOUND_RECIPIENTS;
   const originalDatabaseUrl = process.env.DATABASE_URL;
-  const originalTypesafeKey = process.env.TYPESAFE_API_KEY;
+  const originalGatewayKey = process.env.AI_GATEWAY_API_KEY;
+  const originalOidcToken = process.env.VERCEL_OIDC_TOKEN;
   const originalInboundSecret = process.env.INBOUND_WEBHOOK_SECRET;
   process.env.ALLOWED_INBOUND_RECIPIENT_DOMAINS = "inbound.decent4.com";
   delete process.env.ALLOWED_INBOUND_RECIPIENTS;
   delete process.env.DATABASE_URL;
-  delete process.env.TYPESAFE_API_KEY;
+  delete process.env.AI_GATEWAY_API_KEY;
+  delete process.env.VERCEL_OIDC_TOKEN;
   delete process.env.INBOUND_WEBHOOK_SECRET;
   t.after(() => {
     restoreEnv("ALLOWED_INBOUND_RECIPIENT_DOMAINS", originalAllowedDomains);
     restoreEnv("ALLOWED_INBOUND_RECIPIENTS", originalAllowedRecipients);
     restoreEnv("DATABASE_URL", originalDatabaseUrl);
-    restoreEnv("TYPESAFE_API_KEY", originalTypesafeKey);
+    restoreEnv("AI_GATEWAY_API_KEY", originalGatewayKey);
+    restoreEnv("VERCEL_OIDC_TOKEN", originalOidcToken);
     restoreEnv("INBOUND_WEBHOOK_SECRET", originalInboundSecret);
   });
 

@@ -29,7 +29,7 @@ export function getMockDashboardData(dbError?: string): DashboardData {
     integrations: {
       jev: {
         configured: false,
-        model: "jev-latest",
+        model: "typesafe-ai/jev",
         triageRubricVersion: "ticket-triage-v1",
         completionRubricVersion: "ticket-completion-review-v1",
         procedureVersion: "company-ticket-completion-v1",
@@ -95,7 +95,7 @@ export function getMockDashboardData(dbError?: string): DashboardData {
           suggestedTeam: "Platform",
           confidence: 0.92,
           needsHumanTriage: false,
-          model: "jev-latest",
+          model: "typesafe-ai/jev",
           assessedAt: iso(-51),
         },
         routingDecision: {
@@ -148,7 +148,7 @@ export function getMockDashboardData(dbError?: string): DashboardData {
           suggestedTeam: "Messaging",
           confidence: 0.84,
           needsHumanTriage: false,
-          model: "jev-latest",
+          model: "typesafe-ai/jev",
           assessedAt: iso(-79),
         },
         routingDecision: {
@@ -192,7 +192,7 @@ export function getMockDashboardData(dbError?: string): DashboardData {
           suggestedTeam: "Database",
           confidence: 0.78,
           needsHumanTriage: false,
-          model: "jev-latest",
+          model: "typesafe-ai/jev",
           assessedAt: iso(-110),
         },
         routingDecision: {
@@ -236,7 +236,7 @@ export function getMockDashboardData(dbError?: string): DashboardData {
           suggestedTeam: null,
           confidence: 0.18,
           needsHumanTriage: true,
-          model: "jev-latest",
+          model: "typesafe-ai/jev",
           assessedAt: iso(-43),
         },
         routingDecision: {
@@ -280,7 +280,7 @@ export function getMockDashboardData(dbError?: string): DashboardData {
           suggestedTeam: "Security",
           confidence: 0.88,
           needsHumanTriage: false,
-          model: "jev-latest",
+          model: "typesafe-ai/jev",
           assessedAt: iso(-259),
         },
         routingDecision: {
@@ -298,7 +298,7 @@ export function getMockDashboardData(dbError?: string): DashboardData {
           overallScore: 83,
           evidenceCoverage: 67,
           missingEvidenceCount: 1,
-          model: "jev-latest",
+          model: "typesafe-ai/jev",
           rubricVersion: "ticket-completion-review-v1",
           reviewedAt: iso(-119),
           criteria: [

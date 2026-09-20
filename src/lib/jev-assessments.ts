@@ -1,3 +1,4 @@
+import { isJevConfigured } from "./jev-config";
 import { createHash } from "node:crypto";
 import { getSql, hasDatabaseUrl } from "./db";
 import {
@@ -147,7 +148,7 @@ function compactError(value: string | null) {
 }
 
 function assessmentStatus(error: string | null, attempts: number): AssessmentStatus {
-  if (error === "missing_typesafe_api_key") return "not_configured";
+  if (error === "missing_ai_gateway_credentials") return "not_configured";
   const retryable =
     error === "timeout" ||
     error === "request_failed" ||
@@ -1045,7 +1046,7 @@ export async function processQueuedJevAssessments(limit = 5) {
     where (
       status = 'pending'
       or (status = 'retryable' and coalesce(next_retry_at, now()) <= now())
-      or (status = 'not_configured' and ${Boolean(process.env.TYPESAFE_API_KEY?.trim())})
+      or (status = 'not_configured' and ${isJevConfigured()})
       or (status = 'running' and started_at < now() - interval '10 minutes')
     )
     order by created_at
@@ -1278,7 +1279,7 @@ export async function createCompletionAssessment({
 export function getJevIntegrationStatus() {
   const procedures = completionProceduresForIssue(null);
   return {
-    configured: Boolean(process.env.TYPESAFE_API_KEY?.trim()),
+    configured: isJevConfigured(),
     model: process.env.JEV_MODEL?.trim() || JEV_DEFAULT_MODEL,
     triageRubricVersion: JEV_TRIAGE_RUBRIC_VERSION,
     completionRubricVersion: JEV_COMPLETION_REVIEW_RUBRIC_VERSION,

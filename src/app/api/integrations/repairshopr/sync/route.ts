@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
 import {
   isRepairShoprRequestAuthorized,
+  getRepairShoprConfig,
   syncRepairShopr,
 } from "@/lib/repairshopr";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 300;
 
 async function handleSync(request: Request) {
   if (!isRepairShoprRequestAuthorized(request)) {
@@ -15,6 +17,9 @@ async function handleSync(request: Request) {
   }
 
   try {
+    if (request.method === "GET" && !getRepairShoprConfig().configured) {
+      return NextResponse.json({ ok: true, skipped: "repairshopr_not_configured" });
+    }
     const result = await syncRepairShopr();
     return NextResponse.json(result);
   } catch (error) {

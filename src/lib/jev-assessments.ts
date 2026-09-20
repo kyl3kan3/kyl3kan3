@@ -1,4 +1,6 @@
 import { isJevConfigured } from "./jev-config";
+import { ensureRepairShoprWorkflowSchema } from "./repairshopr-workflow";
+import type { JevWorkHistoryEntry } from "./jev";
 import { createHash } from "node:crypto";
 import { getSql, hasDatabaseUrl } from "./db";
 import {
@@ -84,6 +86,7 @@ type RoutingUserRow = {
 };
 
 type CompletionTicketRow = TicketRoutingRow & {
+  resolved_at: string | null;
   assigned_user_email: string | null;
   assigned_user_name: string | null;
   assigned_user_role: UserRole | null;
@@ -553,7 +556,7 @@ async function processTriageAssessment(
         latest.assigned_team_id !== null ||
         latest.assigned_user_id !== null ||
         !["new", "triaged"].includes(latest.status);
-      const nextStatus = latest.status === "new" ? "triaged" : latest.status;
+      const nextStatus = ["repairshopr", "syncro"].includes(latest.created_from) ? latest.status : latest.status === "new" ? "triaged" : latest.status;
       const routeRows = (await sql`
         update tickets
         set
@@ -622,14 +625,15 @@ async function processTriageAssessment(
     needsHumanTriage ||
     latest.priority !== snapshot.fallbackPriority ||
     !["new", "triaged"].includes(latest.status);
-  const assignedTeamId = preserveAssignment
+  const mirrored = ["repairshopr", "syncro"].includes(latest.created_from);
+  const assignedTeamId = mirrored ? latest.assigned_team_id ?? automaticTeamId : preserveAssignment
     ? latest.assigned_team_id
     : automaticTeamId;
   const assignedUserId = preserveAssignment
     ? latest.assigned_user_id
     : automaticOwner?.id ?? null;
   const priority = preservePriority ? latest.priority : result.routing.priority;
-  const nextStatus = needsHumanTriage
+  const nextStatus = mirrored ? latest.status : needsHumanTriage
     ? latest.status === "new"
       ? "triaged"
       : latest.status
@@ -789,6 +793,14 @@ async function processCompletionAssessment(
     return { status: "superseded" as const };
   }
 
+  if (!snapshot.input.ticket.issueType && ticket.issue_type) {
+    const procedureSet = completionProceduresForIssue(ticket.issue_type);
+    snapshot.input.ticket.issueType = ticket.issue_type;
+    snapshot.input.procedures = procedureSet.procedures;
+    await sql`update jev_assessments set issue_type=${ticket.issue_type},input_snapshot=${JSON.stringify(snapshot)}::jsonb,
+      procedure_version=${procedureSet.version},rubric=${JSON.stringify({version:JEV_COMPLETION_REVIEW_RUBRIC_VERSION,procedureVersion:procedureSet.version,procedures:procedureSet.procedures})}::jsonb where id=${assessment.id}`;
+    await sql`update ticket_completion_submissions set issue_type=${ticket.issue_type} where id=${snapshot.submissionId}`;
+  }
   const result = await reviewCompletedWorkWithJev(snapshot.input);
   if (result.status !== "succeeded" || !result.dimensions) {
     const status = await markAssessmentFailure(assessment, result.error);
@@ -996,7 +1008,7 @@ async function reconcileMissingCompletionAssessments(limit: number) {
         resolutionSummary:
           typeof metadata.resolutionSummary === "string"
             ? metadata.resolutionSummary
-            : ["repairshopr", "syncro"].includes(row.created_from)
+            : row.created_from === "syncro"
               ? row.description
               : null,
         customerNextSteps:
@@ -1008,7 +1020,7 @@ async function reconcileMissingCompletionAssessments(limit: number) {
             ? metadata.verificationEvidence
             : null,
         technicianUserId:
-          ["repairshopr", "syncro"].includes(row.created_from)
+          row.created_from === "syncro"
             ? null
             : Object.prototype.hasOwnProperty.call(
                   metadata,
@@ -1094,6 +1106,7 @@ export async function createCompletionAssessment({
       t.completion_cycle,
       t.created_from,
       t.created_at::text,
+      t.resolved_at::text,
       u.email as assigned_user_email,
       u.full_name as assigned_user_name,
       u.role as assigned_user_role
@@ -1120,7 +1133,8 @@ export async function createCompletionAssessment({
       issue_type,
       resolution_summary,
       customer_next_steps,
-      verification_evidence
+      verification_evidence,
+      submitted_at
     ) values (
       ${orgId},
       ${ticketId},
@@ -1138,7 +1152,8 @@ export async function createCompletionAssessment({
       ${ticket.issue_type},
       ${resolutionSummary?.trim() || null},
       ${customerNextSteps?.trim() || null},
-      ${verificationEvidence?.trim() || null}
+      ${verificationEvidence?.trim() || null},
+      coalesce(${ticket.resolved_at}::timestamptz,now())
     )
     on conflict (ticket_id, completion_cycle) do update
       set resolution_summary = excluded.resolution_summary,
@@ -1164,6 +1179,15 @@ export async function createCompletionAssessment({
     where t.id = ${ticketId}
   `) as Array<{ cycle_started_at: string }>;
   const cycleStartedAt = cycleStartRows[0]?.cycle_started_at ?? ticket.created_at;
+
+  let importedHistory: JevWorkHistoryEntry[] = [];
+  if (ticket.created_from === "repairshopr") {
+    await ensureRepairShoprWorkflowSchema();
+    const imported = await sql`select repairshopr_evidence from tickets where id=${ticketId}`;
+    const evidence = imported[0]?.repairshopr_evidence;
+    if (Array.isArray(evidence)) importedHistory = evidence.filter((entry): entry is JevWorkHistoryEntry =>
+      isRecord(entry) && typeof entry.at === "string" && typeof entry.action === "string" && new Date(entry.at).getTime() >= new Date(cycleStartedAt).getTime());
+  }
 
   const [commentRows, eventRows] = await Promise.all([
     sql`
@@ -1211,6 +1235,7 @@ export async function createCompletionAssessment({
     },
     procedures: procedureSet.procedures,
     history: [
+      ...importedHistory,
       ...eventHistory.map((entry) => ({
         ...entry,
         actor: "system",

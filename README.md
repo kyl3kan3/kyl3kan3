@@ -13,11 +13,20 @@ Configure each account in server environment variables (never paste API keys int
 | RepairShopr | `REPAIRSHOPR_SUBDOMAIN`, `REPAIRSHOPR_API_KEY` | `REPAIRSHOPR_SYNC_SECRET` |
 | Syncro | `SYNCRO_SUBDOMAIN`, `SYNCRO_API_KEY` | `SYNCRO_SYNC_SECRET` |
 
-Use API credentials with customer and ticket read permissions. In Settings, enter the corresponding **sync secret**, test the connection, then run the initial sync. API keys remain server-side. Protected endpoints live under `/api/integrations/repairshopr` and `/api/integrations/syncro`: `GET /status`, `POST /test`, and `GET` or `POST /sync`. Manual requests accept the matching `x-repairshopr-sync-secret` or `x-syncro-sync-secret` header. Scheduled requests use `Authorization: Bearer <CRON_SECRET>`.
+RepairShopr needs account-wide customer read, Tickets - List/Search, Tickets - View Details (including comments), and user read access. A key scoped to only one technician's tickets cannot produce company-wide reports. In Settings, enter the corresponding **sync secret**, test the connection, then run the initial sync. API keys remain server-side. Protected endpoints live under `/api/integrations/repairshopr` and `/api/integrations/syncro`: `GET /status`, `POST /test`, and `GET` or `POST /sync`. Manual requests accept the matching `x-repairshopr-sync-secret` or `x-syncro-sync-secret` header. Scheduled requests use `Authorization: Bearer <CRON_SECRET>`.
 
-`vercel.json` schedules both mirrors every five minutes (requires a Vercel plan supporting that frequency). Configure `CRON_SECRET` before enabling scheduled runs. Each provider has independent `*_MAX_PAGES` and `*_FETCH_TIMEOUT_MS` controls; page-limit failures do not advance its cursor. Runtime initialization applies the Syncro schema automatically; `db/syncro.sql` is the equivalent explicit migration after `db/schema.sql`.
+`vercel.json` schedules both mirrors and the Jev job processor every five minutes (Vercel Pro). RepairShopr uses a durable page checkpoint and ticket queue, importing up to 25 ticket details per run within a 200-second processing budget. Failed items remain queued for retry; committed ticket data and status events are atomic. Customer backfill does not block ticket discovery. Calls are paced below the provider's rate limit. Initial backfills require multiple runs, not one instantaneous import. Syncro retains its separate `SYNCRO_MAX_PAGES` limit. Runtime schema initialization is automatic; explicit migrations are in `db/syncro.sql` and `db/repairshopr-workflow.sql`.
 
-Limitations: this is not bidirectional synchronization or a guaranteed full-history import. Ticket summaries/initial comments may lack technician actions, verification, and customer next steps. No automatic mapping to employee identities is assumed. Missing evidence is flagged, and unattributed imported work is not assigned to an employee for scoring. Live account connectivity must be verified after credentials are configured.
+RepairShopr imports paginated plaintext comment history and distinguishes customer-facing technician replies from internal or unattributed notes. Stable RepairShopr user IDs map to separate local technician records without importing admin privileges. On observed completion, the source assignee is snapshotted for reporting; this indicates ticket ownership, not proof that one person authored all work. Historical completed tickets are reviewed but remain unattributed rather than guessing their past owner. Reopenings create new completion cycles. Missing evidence is not scored as failure. Attachments, worksheet contents, and actions never recorded in comments are not assumed to exist. Syncro remains summary-only. Neither integration writes back to the source system.
+
+### Activate RepairShopr
+
+1. Add `REPAIRSHOPR_SUBDOMAIN` and `REPAIRSHOPR_API_KEY` to the Vercel project's Production environment; redeploy so the functions receive them.
+2. Sign in as the manager and open Settings → Production readiness → Test live connections. This checks Jev with a synthetic sample and checks RepairShopr permissions, including a sample ticket's detail/comments/user when available.
+3. Run Sync now with the provisioned sync secret, or wait for the scheduled job. Check pending/failed imports in Production readiness. Jobs safely skip unconfigured providers.
+4. Complete a test ticket in RepairShopr with explicit diagnosis, actions, verification results, and customer next steps. After import and assessment, inspect the source notes, completion review, and manager report. Actual-account permissions and payloads still require this acceptance test.
+
+`scripts/provision-production.mjs` provisions missing app/manager/job secrets for the linked project without overwriting existing credentials. Generated secrets are saved outside Git in the current user's `.codex/private/kyl3kan3-production.json`. Never commit or share this file publicly. The readiness API is manager-protected and never returns secrets.
 
 API references: [RepairShopr](https://api-docs.repairshopr.com/) and [Syncro](https://api-docs.syncromsp.com/).
 
@@ -60,7 +69,7 @@ Ticket text is sent to TypeSafe for Jev assessment. The integration removes comm
 
 `ALLOWED_INBOUND_RECIPIENT_DOMAINS` limits which receiving domains can create tickets. For this app, set it to `inbound.decent4.com` so mail for another domain or setup is rejected. `ALLOWED_INBOUND_RECIPIENTS` can optionally list exact allowed addresses.
 
-`REPAIRSHOPR_SUBDOMAIN`, `REPAIRSHOPR_API_KEY`, and `REPAIRSHOPR_SYNC_SECRET` enable the RepairShopr mirror. The API key stays server-side, and the sync secret protects manual sync, connection tests, and status checks. On Vercel, set `CRON_SECRET` so scheduled requests can authenticate. `REPAIRSHOPR_MAX_PAGES` is a safety limit: if the provider reports more pages, the sync fails visibly instead of silently skipping records. The included five-minute schedule requires Vercel Pro; Hobby deployments must change it to a daily schedule.
+`REPAIRSHOPR_SUBDOMAIN`, `REPAIRSHOPR_API_KEY`, and `REPAIRSHOPR_SYNC_SECRET` enable the RepairShopr mirror. The API key stays server-side, and the sync secret protects manual sync, connection tests, and status checks. On Vercel, set `CRON_SECRET` so scheduled requests can authenticate. RepairShopr backfills resume from persistent checkpoints; `REPAIRSHOPR_FETCH_TIMEOUT_MS` bounds each request.
 
 ## Functional surface
 

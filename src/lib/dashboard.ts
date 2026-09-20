@@ -1,4 +1,5 @@
 import { getSql, hasDatabaseUrl } from "./db";
+import { ensureRepairShoprWorkflowSchema } from "./repairshopr-workflow";
 import { ensureSyncroSchema, getSyncroStatus } from "./syncro";
 import { getDemoDashboardData } from "./demo-store";
 import { getJevIntegrationStatus } from "./jev-assessments";
@@ -54,6 +55,7 @@ type TicketRow = {
   syncro_url: string | null;
   syncro_status: string | null;
   repairshopr_url: string | null;
+  repairshopr_evidence?: unknown;
   repairshopr_status: string | null;
   repairshopr_customer_name: string | null;
   duplicate_count: number | string | null;
@@ -241,7 +243,12 @@ function mapTicketRow(
     repairshoprUrl: ticket.repairshopr_url,
     repairshoprStatus: ticket.repairshopr_status,
     duplicateCount: toNumber(ticket.duplicate_count),
-    comments,
+    comments: [...comments, ...(Array.isArray(ticket.repairshopr_evidence) ? ticket.repairshopr_evidence.flatMap((value, index): TicketComment[] => {
+      const entry = asRecord(value);
+      if (!entry || typeof entry.at !== "string" || typeof entry.evidence !== "string") return [];
+      return [{id:`repairshopr-${ticket.id}-${index}`,ticketId:ticket.id,authorEmail:typeof entry.actor === "string" ? entry.actor : "RepairShopr",
+        body:`[${String(entry.action ?? "Source note")}]\n${entry.evidence}`,createdAt:entry.at,createdVia:"system"}];
+    }) : [])].sort((a,b)=>new Date(a.createdAt).getTime()-new Date(b.createdAt).getTime()),
     intakeAssessment: hasIntakeAssessment
       ? {
           status: assessmentStatus(ticket.intake_assessment_status),
@@ -362,6 +369,7 @@ export async function getDashboardData(
   try {
     const sql = getSql();
     await Promise.all([ensureRepairShoprSchema(), ensureSyncroSchema(), ensureJevSchema()]);
+    await ensureRepairShoprWorkflowSchema();
 
     const [
       metricsRows,
@@ -446,7 +454,7 @@ export async function getDashboardData(
           )::text as updated_at,
           t.created_from,
           t.syncro_url, t.syncro_status,
-          t.repairshopr_url,
+          t.repairshopr_url, t.repairshopr_evidence,
           t.repairshopr_status,
           coalesce(rc.name, sc.name) as repairshopr_customer_name,
           coalesce(count(ial.alert_event_id), 0)::int as duplicate_count,
@@ -530,7 +538,7 @@ export async function getDashboardData(
           t.repairshopr_updated_at,
           t.created_from,
           t.syncro_url, t.syncro_status,
-          t.repairshopr_url,
+          t.repairshopr_url, t.repairshopr_evidence,
           t.repairshopr_status,
           rc.name,
           rc.email,
@@ -599,7 +607,7 @@ export async function getDashboardData(
             ) as updated_at_sort,
             t.created_from,
             t.syncro_url, t.syncro_status,
-          t.repairshopr_url,
+          t.repairshopr_url, t.repairshopr_evidence,
             t.repairshopr_status,
             coalesce(rc.name, sc.name) as repairshopr_customer_name,
             0::int as duplicate_count

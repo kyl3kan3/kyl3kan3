@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { processQueuedJevAssessments } from "@/lib/jev-assessments";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 300;
 
 function safeEqual(left: string, right: string) {
   const leftBuffer = Buffer.from(left);

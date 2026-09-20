@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import {
   isSyncroRequestAuthorized,
+  getSyncroConfig,
   syncSyncro,
 } from "@/lib/syncro";
 
@@ -15,6 +16,9 @@ async function handleSync(request: Request) {
   }
 
   try {
+    if (request.method === "GET" && !getSyncroConfig().configured) {
+      return NextResponse.json({ ok: true, skipped: "syncro_not_configured" });
+    }
     const result = await syncSyncro();
     return NextResponse.json(result);
   } catch (error) {

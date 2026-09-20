@@ -163,7 +163,7 @@ test("falls back to the documented query authentication when needed", async (t) 
 
   await testRepairShoprConnection();
 
-  assert.equal(requestedUrls.length, 3);
+  assert.equal(requestedUrls.length, 4);
   assert.equal(new URL(requestedUrls[2]).pathname, "/api/v1/tickets");
   assert.equal(new URL(requestedUrls[0]).searchParams.has("api_key"), false);
   assert.equal(

@@ -1,6 +1,6 @@
 import { neon } from "@neondatabase/serverless";
 
-let sqlClient: ReturnType<typeof neon> | null = null;
+let sqlClient: ReturnType<typeof neon<false, false>> | null = null;
 
 export function getDatabaseUrl() {
   return process.env.DATABASE_URL?.trim();
@@ -18,7 +18,7 @@ export function getSql() {
   }
 
   if (!sqlClient) {
-    sqlClient = neon(databaseUrl);
+    sqlClient = neon<false, false>(databaseUrl);
   }
 
   return sqlClient;

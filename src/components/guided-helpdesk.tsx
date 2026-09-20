@@ -29,6 +29,7 @@ import { useMemo, useRef, useState, useTransition } from "react";
 import type { FormEvent, ReactNode, RefObject } from "react";
 import { HelpdeskShell } from "@/components/helpdesk-shell";
 import { SyncroIntegrationCard } from "@/components/syncro-integration-card";
+import { ReadinessCard } from "@/components/readiness-card";
 import type { ShellSection } from "@/components/helpdesk-shell";
 import { useDialogFocus } from "@/components/use-dialog-focus";
 import {
@@ -2390,6 +2391,8 @@ export function SettingsConsole({
       error?: string;
       customersSynced?: number;
       ticketsSynced?: number;
+      pendingTickets?: number;
+      failedTickets?: number;
     };
     if (!response.ok || !result.ok) {
       throw new Error(result.error ?? "RepairShopr sync failed");
@@ -2398,7 +2401,7 @@ export function SettingsConsole({
     await refreshDirectory();
     return `Synced ${result.customersSynced ?? 0} customers and ${
       result.ticketsSynced ?? 0
-    } tickets`;
+    } tickets. ${result.pendingTickets ?? 0} pending; ${result.failedTickets ?? 0} awaiting retry.`;
   }
 
   async function refreshDirectory() {
@@ -2559,6 +2562,7 @@ export function SettingsConsole({
           </p>
         </SetupCard>
 
+        <ReadinessCard />
         <SyncroIntegrationCard />
 
         <SetupCard

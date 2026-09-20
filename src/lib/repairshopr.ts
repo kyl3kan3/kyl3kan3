@@ -1,3 +1,4 @@
+import { bindRepairShoprAccount, ensureRepairShoprWorkflowSchema, fetchRepairShoprHistory, mapRepairShoprUser, record, runRepairShoprImportBatch, timestamp } from "./repairshopr-workflow";
 import { randomUUID } from "node:crypto";
 import { getSql, hasDatabaseUrl } from "./db";
 import {
@@ -16,11 +17,6 @@ type SyncRunRow = {
 };
 type SyncLockRow = { lock_token: string };
 type SchemaReadyRow = { ready: boolean };
-type MirroredTicketRow = {
-  id: string;
-  status: TicketStatus;
-  completion_cycle: number | string;
-};
 
 export type RepairShoprConfig = {
   configured: boolean;
@@ -474,12 +470,6 @@ async function ensureDefaultOrg() {
   return rows[0].id;
 }
 
-function formatCursor(value: string | null) {
-  if (!value) return null;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
-  return new Date(date.getTime() - 60_000).toISOString();
-}
 
 async function repairShoprFetch(path: string, params: Record<string, string>) {
   const config = getRepairShoprConfig();
@@ -508,6 +498,7 @@ async function repairShoprFetch(path: string, params: Record<string, string>) {
   );
 
   async function requestWithAuth(mode: "header" | "query") {
+    await new Promise(resolve => setTimeout(resolve, 350));
     const requestUrl = new URL(url);
     const headers: Record<string, string> = { accept: "application/json" };
     if (mode === "header") {
@@ -524,7 +515,7 @@ async function repairShoprFetch(path: string, params: Record<string, string>) {
         signal: AbortSignal.timeout(timeoutMs),
       });
     } catch (error) {
-      const reason = error instanceof Error ? error.message : "request failed";
+      const reason = error instanceof Error && error.name === "TimeoutError" ? "request timed out" : "network request failed";
       throw new Error(`RepairShopr ${path} request failed: ${reason}`);
     }
   }
@@ -548,63 +539,7 @@ async function repairShoprFetch(path: string, params: Record<string, string>) {
   return response.json() as Promise<unknown>;
 }
 
-function getPaginationMeta(payload: unknown) {
-  const meta = objectValue(objectValue(payload)?.meta);
-  if (!meta) return null;
 
-  const page = Number(meta.page);
-  const totalPages = Number(meta.total_pages ?? meta.totalPages);
-  if (!Number.isFinite(page) || !Number.isFinite(totalPages)) return null;
-
-  return {
-    page: Math.max(1, Math.trunc(page)),
-    totalPages: Math.max(1, Math.trunc(totalPages)),
-  };
-}
-
-async function fetchAllRepairShopr<T>(
-  path: string,
-  normalize: (payload: unknown) => T[],
-  extraParams: Record<string, string> = {},
-  onPageFetched?: () => Promise<void>,
-) {
-  const maxPages = Math.max(
-    1,
-    Number.parseInt(process.env.REPAIRSHOPR_MAX_PAGES ?? "10", 10) || 10,
-  );
-  const all: T[] = [];
-
-  for (let page = 1; page <= maxPages; page += 1) {
-    const payload = await repairShoprFetch(path, {
-      page: String(page),
-      ...extraParams,
-    });
-    const items = normalize(payload);
-    all.push(...items);
-    await onPageFetched?.();
-    const meta = getPaginationMeta(payload);
-    if (meta && meta.page >= meta.totalPages) break;
-    if (items.length === 0) {
-      if (meta && meta.page < meta.totalPages) {
-        throw new Error(
-          `RepairShopr ${path} page ${meta.page} returned no usable records before page ${meta.totalPages}`,
-        );
-      }
-      break;
-    }
-
-    if (page >= maxPages) {
-      const total = meta ? ` of ${meta.totalPages}` : "";
-      throw new Error(
-        `RepairShopr ${path} pagination stopped at page ${page}${total}; increase REPAIRSHOPR_MAX_PAGES to complete the sync`,
-      );
-    }
-
-    await new Promise((resolve) => setTimeout(resolve, 350));
-  }
-
-  return all;
-}
 
 async function upsertCustomer(orgId: string, customer: RepairShoprCustomer) {
   const sql = getSql();
@@ -641,171 +576,66 @@ async function upsertCustomer(orgId: string, customer: RepairShoprCustomer) {
 
 async function upsertTicket(orgId: string, ticket: RepairShoprTicket) {
   const sql = getSql();
-  const existingRows = (await sql`
-    select id::text, status, completion_cycle
-    from tickets
-    where org_id = ${orgId} and repairshopr_ticket_id = ${ticket.id}
-    limit 1
-  `) as MirroredTicketRow[];
-  const existing = existingRows[0] ?? null;
-  await sql`
-    insert into tickets (
-      org_id,
-      title,
-      description,
-      status,
-      priority,
-      importance_score,
-      urgency_score,
-      reporter_email,
-      created_from,
-      created_at,
-      repairshopr_ticket_id,
-      repairshopr_ticket_number,
-      repairshopr_customer_id,
-      repairshopr_status,
-      repairshopr_url,
-      repairshopr_updated_at,
-      repairshopr_payload
-    )
-    values (
-      ${orgId},
-      ${ticket.title},
-      ${ticket.description},
-      ${ticket.status},
-      ${ticket.priority},
-      20,
-      18,
-      coalesce(
-        ${ticket.customerEmail},
-        (
-          select email
-          from repairshopr_customers
-          where org_id = ${orgId}
-            and repairshopr_customer_id = ${ticket.customerId}
-          limit 1
-        )
-      ),
-      'repairshopr',
-      coalesce(${ticket.createdAt}::timestamptz, now()),
-      ${ticket.id},
-      ${ticket.number},
-      ${ticket.customerId},
-      ${ticket.repairshoprStatus},
-      ${ticket.url},
-      ${ticket.updatedAt},
-      ${JSON.stringify(ticket.raw)}::jsonb
-    )
-    on conflict (org_id, repairshopr_ticket_id) where repairshopr_ticket_id is not null do update
-      set title = excluded.title,
-          description = excluded.description,
-          status = excluded.status,
-          reporter_email = excluded.reporter_email,
-          created_from = 'repairshopr',
-          repairshopr_ticket_number = excluded.repairshopr_ticket_number,
-          repairshopr_customer_id = excluded.repairshopr_customer_id,
-          repairshopr_status = excluded.repairshopr_status,
-          repairshopr_url = excluded.repairshopr_url,
-          repairshopr_updated_at = excluded.repairshopr_updated_at,
-          repairshopr_payload = excluded.repairshopr_payload
-      where tickets.repairshopr_updated_at is distinct from excluded.repairshopr_updated_at
-         or tickets.repairshopr_payload is distinct from excluded.repairshopr_payload
-  `;
-
-  const mirroredRows = (await sql`
-    select id::text, status, completion_cycle
-    from tickets
-    where org_id = ${orgId} and repairshopr_ticket_id = ${ticket.id}
-    limit 1
-  `) as MirroredTicketRow[];
-  const mirrored = mirroredRows[0];
-  if (!mirrored) return;
-
-  if (!existing) {
-    await sql`
-      insert into ticket_status_events (
-        org_id,
-        ticket_id,
-        from_status,
-        to_status,
-        completion_cycle,
-        source,
-        metadata
-      ) values (
-        ${orgId},
-        ${mirrored.id},
-        null,
-        ${ticket.status},
-        0,
-        'repairshopr',
-        ${JSON.stringify({ repairshoprTicketId: ticket.id })}::jsonb
-      )
-    `;
-    await enqueueTicketTriage({
-      orgId,
-      ticketId: mirrored.id,
-      ticket: {
-        title: ticket.title,
-        description: ticket.description,
-        source: "repairshopr",
-        service: "support_portal",
-        severity: ticket.priority,
-      },
-      fallbackPriority: ticket.priority,
-      idempotencyKey: `triage:${mirrored.id}:repairshopr:${ticket.id}`,
-    });
+  const customer = normalizeRepairShoprCustomer(ticket.raw.customer);
+  if (customer) await upsertCustomer(orgId, customer);
+  const history = await fetchRepairShoprHistory(ticket.id, repairShoprFetch);
+  const technicianId = await mapRepairShoprUser(orgId, ticket.raw.user_id, repairShoprFetch);
+  const rows = await sql`select id::text,status,completion_cycle from tickets where org_id=${orgId} and repairshopr_ticket_id=${ticket.id}`;
+  const existing = rows[0];
+  const id = existing ? String(existing.id) : randomUUID();
+  const complete = ["resolved","closed"].includes(ticket.status);
+  const wasComplete = existing && ["resolved","closed"].includes(String(existing.status));
+  const completing = complete && !wasComplete;
+  const reopening = Boolean(wasComplete && !complete);
+  const cycle = Number(existing?.completion_cycle ?? 0) + (completing ? 1 : 0);
+  const resolvedAt = complete ? timestamp(ticket.raw.resolved_at) : null;
+  // Historical ownership is not evidence of who completed the work.
+  let evaluatedUser = existing && completing ? technicianId : null;
+  if (complete && wasComplete) {
+    const prior = await sql`select metadata from ticket_status_events where ticket_id=${id} and completion_cycle=${cycle}
+      and to_status in ('resolved','closed') order by changed_at desc limit 1`;
+    const attribution = record(prior[0]?.metadata).technicianUserId;
+    evaluatedUser = typeof attribution === "string" ? attribution : null;
   }
-
-  const wasComplete =
-    existing?.status === "resolved" || existing?.status === "closed";
-  const isComplete = ticket.status === "resolved" || ticket.status === "closed";
-  if (existing && existing.status !== ticket.status) {
-    let completionCycle = Number(existing.completion_cycle ?? 0);
-    const completing = !wasComplete && isComplete;
-    const reopening = wasComplete && !isComplete;
-    const rows = (await sql`
-      update tickets
-      set
-        completion_cycle = completion_cycle + ${completing ? 1 : 0},
-        reopened_count = reopened_count + ${reopening ? 1 : 0},
-        resolved_at = case
-          when ${completing} then now()
-          when ${reopening} then null
-          else resolved_at
-        end
-      where id = ${mirrored.id}
-      returning completion_cycle
-    `) as Array<{ completion_cycle: number | string }>;
-    completionCycle = Number(rows[0]?.completion_cycle ?? completionCycle);
-    await sql`
-      insert into ticket_status_events (
-        org_id,
-        ticket_id,
-        from_status,
-        to_status,
-        completion_cycle,
-        source,
-        metadata
-      ) values (
-        ${orgId},
-        ${mirrored.id},
-        ${existing.status},
-        ${ticket.status},
-        ${completionCycle},
-        'repairshopr',
-        ${JSON.stringify({ repairshoprTicketId: ticket.id, reopening })}::jsonb
-      )
-    `;
-    if (completing) {
-      await createCompletionAssessment({
-        orgId,
-        ticketId: mirrored.id,
-        completionCycle,
-        resolutionSummary: ticket.description,
-        customerNextSteps: null,
-        verificationEvidence: null,
-        technicianUserId: null,
-      });
+  const publicReply = history.find(entry => entry.action === "customer-facing technician message" && (!ticket.createdAt || entry.at >= ticket.createdAt));
+  const metadata = { repairshoprTicketId: ticket.id, reopening, technicianUserId: evaluatedUser,
+    attributionSource: existing ? "repairshopr_assignee_at_observed_completion" : "historical_import_unattributed" };
+  await sql.transaction([
+    sql`insert into tickets(id,org_id,title,description,status,priority,importance_score,urgency_score,reporter_email,created_from,created_at,
+      assigned_user_id,repairshopr_ticket_id,repairshopr_ticket_number,repairshopr_customer_id,repairshopr_status,repairshopr_url,repairshopr_updated_at,repairshopr_payload,
+      repairshopr_evidence,completion_cycle,reopened_count,resolved_at,first_response_at,sla_due_at)
+      values (${id},${orgId},${ticket.title},${ticket.description},${ticket.status},${ticket.priority},20,18,
+      coalesce(${ticket.customerEmail},(select email from repairshopr_customers where org_id=${orgId} and repairshopr_customer_id=${ticket.customerId} limit 1)),
+      'repairshopr',coalesce(${ticket.createdAt}::timestamptz,now()),${technicianId},
+      ${ticket.id},${ticket.number},${ticket.customerId},${ticket.repairshoprStatus},${ticket.url},${ticket.updatedAt},${JSON.stringify(ticket.raw)}::jsonb,
+      ${JSON.stringify(history)}::jsonb,${cycle},0,${resolvedAt}::timestamptz,${publicReply?.at ?? null}::timestamptz,${timestamp(ticket.raw.due_date)}::timestamptz)
+      on conflict(org_id,repairshopr_ticket_id) where repairshopr_ticket_id is not null do update set
+      title=excluded.title,description=excluded.description,status=excluded.status,assigned_user_id=excluded.assigned_user_id,
+      reporter_email=excluded.reporter_email,repairshopr_ticket_number=excluded.repairshopr_ticket_number,
+      repairshopr_customer_id=excluded.repairshopr_customer_id,repairshopr_status=excluded.repairshopr_status,
+      repairshopr_url=excluded.repairshopr_url,repairshopr_updated_at=excluded.repairshopr_updated_at,
+      repairshopr_payload=excluded.repairshopr_payload,repairshopr_evidence=excluded.repairshopr_evidence,
+      completion_cycle=${cycle},reopened_count=tickets.reopened_count+${reopening ? 1 : 0},
+      resolved_at=case when ${complete} then coalesce(excluded.resolved_at,tickets.resolved_at,now()) else null end,
+      first_response_at=excluded.first_response_at,sla_due_at=coalesce(excluded.sla_due_at,tickets.sla_due_at)`,
+    sql`insert into ticket_status_events(org_id,ticket_id,from_status,to_status,completion_cycle,source,metadata,changed_at)
+      select ${orgId},${id},${existing?.status ?? null},${ticket.status},${cycle},'repairshopr',${JSON.stringify(metadata)}::jsonb,
+        coalesce(${completing ? resolvedAt : ticket.updatedAt}::timestamptz,now())
+      where ${!existing || existing.status !== ticket.status}`,
+  ]);
+  // Idempotent enqueue also repairs a crash between the committed import and the job enqueue.
+  await enqueueTicketTriage({ orgId, ticketId:id,
+    ticket:{title:ticket.title,description:ticket.description,source:"repairshopr",service:"support_portal",severity:ticket.priority},
+    fallbackPriority:ticket.priority,preserveAssignment:true,preservePriority:true,
+    idempotencyKey:`triage:${id}:repairshopr:${ticket.id}` });
+  if (complete) {
+    const assessments = await sql`select id from jev_assessments where ticket_id=${id} and kind='completion_review' and completion_cycle=${cycle} limit 1`;
+    if (!assessments.length) {
+      const events = await sql`select metadata from ticket_status_events where ticket_id=${id} and completion_cycle=${cycle}
+        and to_status in ('resolved','closed') order by changed_at desc limit 1`;
+      const saved = record(events[0]?.metadata);
+      await createCompletionAssessment({orgId,ticketId:id,completionCycle:cycle,
+        technicianUserId:typeof saved.technicianUserId === "string" ? saved.technicianUserId : null});
     }
   }
 }
@@ -902,7 +732,14 @@ export async function testRepairShoprConnection() {
   }
 
   await repairShoprFetch("/customers", { page: "1" });
-  await repairShoprFetch("/tickets", { page: "1" });
+  const tickets = record(await repairShoprFetch("/tickets", { page: "1" }));
+  await repairShoprFetch("/users", { page: "1" });
+  const sample = Array.isArray(tickets.tickets) ? record(tickets.tickets[0]) : {};
+  if (sample.id) {
+    await repairShoprFetch(`/tickets/${sample.id}`, {});
+    await repairShoprFetch(`/tickets/${sample.id}/comments`, { page: "1" });
+    if (sample.user_id) await repairShoprFetch(`/users/${sample.user_id}`, {});
+  }
   return { ok: true, baseUrl: config.baseUrl };
 }
 
@@ -917,8 +754,10 @@ export async function syncRepairShopr(): Promise<RepairShoprSyncResult> {
   }
 
   await Promise.all([ensureRepairShoprSchema(), ensureJevSchema()]);
+  await ensureRepairShoprWorkflowSchema();
   const sql = getSql();
   const orgId = await ensureDefaultOrg();
+  await bindRepairShoprAccount(orgId, config.subdomain!);
   const lockToken = await acquireSyncLock(orgId);
   let runId: string | null = null;
 
@@ -939,64 +778,28 @@ export async function syncRepairShopr(): Promise<RepairShoprSyncResult> {
     `) as IdRow[];
     runId = runRows[0].id;
 
-    const cursorRows = (await sql`
-      select cursor_updated_at::text
-      from repairshopr_sync_runs
-      where org_id = ${orgId} and status = 'success' and cursor_updated_at is not null
-      order by finished_at desc
-      limit 1
-    `) as { cursor_updated_at: string | null }[];
-    const cursor = formatCursor(cursorRows[0]?.cursor_updated_at ?? null);
-
-    const customers = await fetchAllRepairShopr(
-      "/customers",
-      extractRepairShoprCustomers,
-      {},
-      () => renewSyncLock(orgId, lockToken),
-    );
-    for (const [index, customer] of customers.entries()) {
-      if (index > 0 && index % 25 === 0) {
-        await renewSyncLock(orgId, lockToken);
-      }
-      await upsertCustomer(orgId, customer);
-    }
-
-    const tickets = await fetchAllRepairShopr(
-      "/tickets",
-      (payload) => extractRepairShoprTickets(payload, config.baseUrl),
-      cursor ? { since_updated_at: cursor } : {},
-      () => renewSyncLock(orgId, lockToken),
-    );
-    let cursorUpdatedAt: string | null = cursorRows[0]?.cursor_updated_at ?? null;
-    for (const [index, ticket] of tickets.entries()) {
-      if (index > 0 && index % 25 === 0) {
-        await renewSyncLock(orgId, lockToken);
-      }
-      await upsertTicket(orgId, ticket);
-      if (
-        ticket.updatedAt &&
-        (!cursorUpdatedAt ||
-          new Date(ticket.updatedAt).getTime() > new Date(cursorUpdatedAt).getTime())
-      ) {
-        cursorUpdatedAt = ticket.updatedAt;
-      }
-    }
+    const batch = await runRepairShoprImportBatch({
+      orgId, fetcher: repairShoprFetch, renew: () => renewSyncLock(orgId,lockToken),
+      customer: async raw => { const customer=normalizeRepairShoprCustomer(raw); if (!customer) throw new Error("Invalid customer"); await upsertCustomer(orgId,customer); },
+      ticket: async raw => { const ticket=normalizeRepairShoprTicket(raw,config.baseUrl); if (!ticket) throw new Error("Invalid ticket"); await upsertTicket(orgId,ticket); },
+    });
+    const { cursorUpdatedAt } = batch;
 
     await renewSyncLock(orgId, lockToken);
     await sql`
       update repairshopr_sync_runs
-      set status = 'success',
+      set status = ${batch.failedTickets > 0 ? "error" : "success"},
+          error = ${batch.failedTickets > 0 ? "Some ticket imports failed and remain queued for retry. Check readiness for backlog." : null},
           finished_at = now(),
-          customers_synced = ${customers.length},
-          tickets_synced = ${tickets.length},
+          customers_synced = ${batch.customersSynced},
+          tickets_synced = ${batch.ticketsSynced},
           cursor_updated_at = ${cursorUpdatedAt}
       where id = ${runId}
     `;
 
     return {
       ok: true,
-      customersSynced: customers.length,
-      ticketsSynced: tickets.length,
+      ...batch,
       cursorUpdatedAt,
     };
   } catch (error) {

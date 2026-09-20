@@ -45,7 +45,7 @@ const statusPresentation: Record<
 > = {
   complete: {
     label: "Assessment complete",
-    className: "bg-[#e8f7f3] text-[#1f6f61] ring-[#c7eee4]",
+    className: "bg-accent-soft text-accent ring-blue-100",
   },
   human_review: {
     label: "Needs human triage",
@@ -81,11 +81,11 @@ function confidenceLabel(value?: number | null) {
 
 function Detail({ label, value }: { label: string; value: string }) {
   return (
-    <div className="min-w-0 rounded-2xl bg-white px-3 py-3 ring-1 ring-[#e7dfd2]">
-      <dt className="text-[11px] font-bold uppercase tracking-[0.09em] text-[#737064]">
+    <div className="min-w-0 rounded-lg bg-white px-3 py-3 ring-1 ring-border">
+      <dt className="text-[11px] font-semibold uppercase tracking-[0.09em] text-ink-muted">
         {label}
       </dt>
-      <dd className="mt-1 truncate text-sm font-bold text-[#24324a]">{value}</dd>
+      <dd className="mt-1 truncate text-sm font-semibold text-ink">{value}</dd>
     </div>
   );
 }
@@ -100,29 +100,29 @@ export function IntakeAssessmentCard({
   return (
     <section
       aria-labelledby="jev-intake-assessment-title"
-      className={`rounded-[28px] border border-[#e7dfd2] bg-white p-5 shadow-sm sm:p-6 ${className}`}
+      className={`rounded-xl border border-border bg-white p-5 shadow-sm sm:p-6 ${className}`}
     >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="flex items-center gap-2 text-[#1f6f61]">
+          <div className="flex items-center gap-2 text-accent">
             <Bot aria-hidden="true" className="h-4 w-4" />
-            <span className="text-[12px] font-bold uppercase tracking-[0.1em]">
+            <span className="text-[12px] font-semibold uppercase tracking-[0.1em]">
               Incoming ticket
             </span>
           </div>
           <h2
             id="jev-intake-assessment-title"
-            className="mt-2 text-balance text-xl font-bold tracking-tight text-[#1f2937]"
+            className="mt-2 text-balance text-xl font-semibold tracking-tight text-ink"
           >
             Jev intake assessment
           </h2>
-          <p className="mt-1 max-w-2xl text-pretty text-sm leading-6 text-[#737064]">
+          <p className="mt-1 max-w-2xl text-pretty text-sm leading-6 text-ink-muted">
             Jev classifies the request. Your routing rules turn that assessment
             into an operational decision.
           </p>
         </div>
         <span
-          className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-bold ring-1 ${status.className}`}
+          className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-semibold ring-1 ${status.className}`}
         >
           {assessment.status === "pending" ? (
             <CircleDashed aria-hidden="true" className="h-3.5 w-3.5" />
@@ -136,11 +136,11 @@ export function IntakeAssessmentCard({
       </div>
 
       <div className="mt-5 grid items-stretch gap-3 lg:grid-cols-[minmax(0,1fr)_44px_minmax(0,1fr)]">
-        <div className="rounded-[22px] bg-[#f7f5f0] p-4 ring-1 ring-[#e7dfd2]">
+        <div className="rounded-lg bg-background p-4 ring-1 ring-border">
           <div className="flex items-center justify-between gap-3">
-            <h3 className="text-sm font-bold text-[#1f2937]">Jev assesses</h3>
+            <h3 className="text-sm font-semibold text-ink">Jev assesses</h3>
             {assessment.model ? (
-              <span className="truncate rounded-full bg-white px-2.5 py-1 font-mono text-[10px] font-bold text-[#737064] ring-1 ring-[#e7dfd2]">
+              <span className="truncate rounded-full bg-white px-2.5 py-1 font-mono text-[10px] font-semibold text-ink-muted ring-1 ring-border">
                 {assessment.model}
               </span>
             ) : null}
@@ -158,22 +158,25 @@ export function IntakeAssessmentCard({
             />
           </dl>
           {assessment.explanation ? (
-            <p className="mt-3 text-pretty text-[13px] leading-5 text-[#5f625d]">
+            <p className="mt-3 text-pretty text-[13px] leading-5 text-ink-muted">
               {assessment.explanation}
             </p>
           ) : null}
         </div>
 
-        <div className="hidden items-center justify-center lg:flex" aria-hidden="true">
-          <span className="grid h-9 w-9 place-items-center rounded-full bg-[#e8f7f3] text-[#1f6f61] ring-1 ring-[#c7eee4]">
+        <div
+          className="hidden items-center justify-center lg:flex"
+          aria-hidden="true"
+        >
+          <span className="grid h-9 w-9 place-items-center rounded-full bg-accent-soft text-accent ring-1 ring-blue-100">
             <ArrowRight className="h-4 w-4" />
           </span>
         </div>
 
-        <div className="rounded-[22px] bg-[#f2f5f7] p-4 ring-1 ring-[#dce3e8]">
+        <div className="rounded-lg bg-accent-soft p-4 ring-1 ring-border">
           <div className="flex items-center gap-2">
-            <Route aria-hidden="true" className="h-4 w-4 text-[#24324a]" />
-            <h3 className="text-sm font-bold text-[#1f2937]">
+            <Route aria-hidden="true" className="h-4 w-4 text-ink" />
+            <h3 className="text-sm font-semibold text-ink">
               Your software routes
             </h3>
           </div>
@@ -189,21 +192,23 @@ export function IntakeAssessmentCard({
             />
             <Detail
               label="Triage path"
-              value={routing.needsHumanTriage ? "Human review" : "Rules applied"}
+              value={
+                routing.needsHumanTriage ? "Human review" : "Rules applied"
+              }
             />
           </dl>
           {routing.routingReason ? (
-            <p className="mt-3 text-pretty text-[13px] leading-5 text-[#5f625d]">
+            <p className="mt-3 text-pretty text-[13px] leading-5 text-ink-muted">
               {routing.routingReason}
             </p>
           ) : null}
         </div>
       </div>
 
-      <p className="mt-4 flex items-start gap-2 rounded-2xl bg-[#fbfaf7] px-3 py-2.5 text-pretty text-[12px] leading-5 text-[#5f625d] ring-1 ring-[#e7dfd2]">
+      <p className="mt-4 flex items-start gap-2 rounded-lg bg-surface-muted px-3 py-2.5 text-pretty text-[12px] leading-5 text-ink-muted ring-1 ring-border">
         <ShieldCheck
           aria-hidden="true"
-          className="mt-0.5 h-4 w-4 shrink-0 text-[#1f6f61]"
+          className="mt-0.5 h-4 w-4 shrink-0 text-accent"
         />
         Jev supplies an assessment; assignment, priority, and response deadlines
         are calculated by your configured rules.

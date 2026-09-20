@@ -3,6 +3,8 @@
 import {
   Activity,
   AlertTriangle,
+  ArrowRight,
+  ArrowUpRight,
   CheckCircle2,
   Clock3,
   Database,
@@ -23,10 +25,11 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useMemo, useRef, useState, useTransition } from "react";
 import type { FormEvent, ReactNode, RefObject } from "react";
 import { HelpdeskShell } from "@/components/helpdesk-shell";
 import type { ShellSection } from "@/components/helpdesk-shell";
+import { useDialogFocus } from "@/components/use-dialog-focus";
 import {
   CompleteTicketDialog,
   type CompletionEvidence,
@@ -196,13 +199,13 @@ function SelectField({
   disabled?: boolean;
 }) {
   return (
-    <label className="grid min-w-0 gap-1.5 text-[11px] font-bold uppercase tracking-[0.08em] text-[#737064]">
+    <label className="grid min-w-0 gap-1.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-muted">
       {labelText}
       <select
         value={value}
         disabled={disabled}
         onChange={(event) => onChange(event.target.value)}
-        className="input-field h-11 w-full rounded-2xl px-3 text-sm font-semibold normal-case tracking-normal text-slate-900 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400"
+        className="input-field h-11 w-full rounded-lg px-3 text-sm font-semibold normal-case tracking-normal text-slate-900 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400"
       >
         {children}
       </select>
@@ -226,7 +229,7 @@ function TextField({
   type?: "email" | "password" | "text" | "url";
 }) {
   return (
-    <label className="grid min-w-0 gap-1.5 text-[11px] font-bold uppercase tracking-[0.08em] text-[#737064]">
+    <label className="grid min-w-0 gap-1.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-muted">
       {labelText}
       <input
         type={type}
@@ -234,7 +237,7 @@ function TextField({
         value={value}
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
-        className="input-field h-11 w-full rounded-2xl px-3 text-sm normal-case tracking-normal text-slate-900 placeholder:text-slate-400"
+        className="input-field h-11 w-full rounded-lg px-3 text-sm normal-case tracking-normal text-slate-900 placeholder:text-slate-400"
       />
     </label>
   );
@@ -243,7 +246,7 @@ function TextField({
 function Notice({ message }: { message: string | null }) {
   if (!message) return null;
   return (
-    <div className="fixed bottom-5 left-1/2 z-50 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 rounded-2xl border border-[#d7ecdf] bg-white px-4 py-3 text-sm font-bold text-[#1f2937] shadow-lg">
+    <div className="fixed bottom-24 lg:bottom-5 left-1/2 z-50 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 rounded-lg border border-[#d7ecdf] bg-white px-4 py-3 text-sm font-semibold text-ink shadow-lg">
       <div className="flex items-center gap-2">
         <span className="h-2 w-2 rounded-full bg-emerald-500 ring-pulse" />
         {message}
@@ -266,7 +269,7 @@ function HealthButton({
       type="button"
       onClick={onClick}
       disabled={isPending}
-      className="btn-soft inline-flex h-10 items-center justify-center gap-2 rounded-full px-4 text-[13px] font-bold disabled:opacity-60"
+      className="btn-soft inline-flex h-10 items-center justify-center gap-2 rounded-full px-4 text-[13px] font-semibold disabled:opacity-60"
     >
       <ShieldCheck className="h-4 w-4" />
       {isLive ? "Live data" : "Demo data"}
@@ -342,7 +345,9 @@ function useDashboardState(
         const message = await action();
         if (message) setNotice(message);
       } catch (error) {
-        setNotice(error instanceof Error ? error.message : "Something went wrong");
+        setNotice(
+          error instanceof Error ? error.message : "Something went wrong",
+        );
       }
     });
   }
@@ -388,7 +393,10 @@ function useDashboardState(
       : "Request created";
   }
 
-  async function patchTicket(ticketId: string, payload: Record<string, unknown>) {
+  async function patchTicket(
+    ticketId: string,
+    payload: Record<string, unknown>,
+  ) {
     const response = await fetch(`/api/tickets/${ticketId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -428,49 +436,60 @@ function useDashboardState(
   };
 }
 
-function TicketTask({ ticket, nowMs }: { ticket: TicketQueueItem; nowMs: number }) {
+function TicketTask({
+  ticket,
+  nowMs,
+}: {
+  ticket: TicketQueueItem;
+  nowMs: number;
+}) {
   const isBreached = isBreachedTicket(ticket, nowMs);
 
   return (
-    <Link
-      href={`/tickets/${ticket.id}`}
-      className="group block rounded-2xl border border-[#e7dfd2] bg-white px-4 py-4 transition-[transform,border-color,box-shadow] duration-150 hover:-translate-y-0.5 hover:border-[#cfc4b4] hover:shadow-sm active:scale-[0.99]"
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="mb-2 flex flex-wrap items-center gap-1.5">
-            <span
-              className={`inline-flex h-6 items-center rounded-full px-2.5 text-[11px] font-bold ${priorityClass[ticket.priority]}`}
-            >
-              {friendlyPriority(ticket.priority)}
+    <Link href={`/tickets/${ticket.id}`} className="ticket-row group">
+      <span
+        aria-hidden="true"
+        className={`ticket-rail priority-rail-${ticket.priority.toLowerCase()}`}
+      />
+      <div className="ticket-row-content">
+        <div className="ticket-row-top">
+          <span className="ticket-number">TK-{ticket.ticketNumber}</span>
+          <span
+            className={`inline-flex h-5 items-center rounded px-1.5 text-[10px] font-medium ${priorityClass[ticket.priority]}`}
+          >
+            {friendlyPriority(ticket.priority)}
+          </span>
+          <span
+            className={`inline-flex h-5 items-center rounded px-1.5 text-[10px] font-medium ${statusTone[ticket.status]}`}
+          >
+            {friendlyStatus(ticket.status)}
+          </span>
+          {isBreached ? (
+            <span className="inline-flex h-6 items-center gap-1 rounded-full bg-red-50 px-2.5 text-[11px] font-semibold text-red-700 ring-1 ring-red-100">
+              <Clock3 className="h-3 w-3" />
+              Due now
             </span>
-            <span
-              className={`inline-flex h-6 items-center rounded-full px-2.5 text-[11px] font-bold ${statusTone[ticket.status]}`}
-            >
-              {friendlyStatus(ticket.status)}
-            </span>
-            {isBreached ? (
-              <span className="inline-flex h-6 items-center gap-1 rounded-full bg-red-50 px-2.5 text-[11px] font-bold text-red-700 ring-1 ring-red-100">
-                <Clock3 className="h-3 w-3" />
-                Due now
-              </span>
-            ) : null}
-          </div>
-          <h3 className="line-clamp-2 text-[15px] font-bold leading-6 text-[#1f2937]">
-            {ticket.title}
-          </h3>
+          ) : null}
         </div>
-        <span className="shrink-0 rounded-full bg-[#f7f5f0] px-2.5 py-1 font-mono text-[10px] font-bold tracking-wide text-[#737064] ring-1 ring-[#e7dfd2]">
-          TK-{ticket.ticketNumber}
-        </span>
+        <h3 className="line-clamp-2 text-ink">{ticket.title}</h3>
+        <div className="ticket-row-meta">
+          <span className="truncate">{customerLabel(ticket)}</span>
+          <span className="inline-flex items-center gap-1.5">
+            <Users size={12} />
+            {ticket.assignee}
+          </span>
+          <span
+            className={
+              isBreached ? "font-semibold text-red-700" : "font-semibold"
+            }
+          >
+            {ticket.slaDueAt
+              ? `Due ${formatDateTime(ticket.slaDueAt)}`
+              : "No due time"}
+          </span>
+        </div>
       </div>
-      <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-[#737064]">
-        <span className="truncate">Customer: {customerLabel(ticket)}</span>
-        <span className="truncate">Owner: {ticket.assignee}</span>
-        <span className={isBreached ? "font-bold text-red-700" : "font-semibold"}>
-          {ticket.slaDueAt ? `Due ${formatDateTime(ticket.slaDueAt)}` : "No due time"}
-        </span>
-      </div>
+      <ArrowUpRight size={16} className="ticket-row-arrow" />
     </Link>
   );
 }
@@ -492,21 +511,19 @@ function WorkBucket({
   const hasMore = tickets.length > 6;
   const visibleTickets = isExpanded ? tickets : tickets.slice(0, 6);
   return (
-    <section className="rounded-[28px] border border-[#e7dfd2] bg-white/80 p-4 shadow-sm sm:p-5">
-      <div className="mb-4 flex items-start justify-between gap-4">
+    <section className="work-bucket">
+      <div className="work-bucket-header">
         <div className="min-w-0">
-          <h2 className="text-[18px] font-bold tracking-tight text-[#1f2937]">
+          <h2 className="text-[18px] font-semibold tracking-tight text-ink">
             {title}
           </h2>
-          <p className="mt-1 text-sm leading-5 text-[#737064]">{helper}</p>
+          <p className="mt-1 text-sm leading-5 text-ink-muted">{helper}</p>
         </div>
-        <span className="rounded-full bg-[#f7f5f0] px-3 py-1 text-[12px] font-bold tabular-nums text-[#24324a] ring-1 ring-[#e7dfd2]">
-          {tickets.length}
-        </span>
+        <span className="bucket-count">{tickets.length}</span>
       </div>
       {visibleTickets.length > 0 ? (
         <>
-          <div className="grid gap-3">
+          <div className="grid gap-2">
             {visibleTickets.map((ticket) => (
               <TicketTask key={ticket.id} ticket={ticket} nowMs={nowMs} />
             ))}
@@ -515,14 +532,15 @@ function WorkBucket({
             <button
               type="button"
               onClick={() => setIsExpanded((expanded) => !expanded)}
-              className="btn-soft mt-4 inline-flex h-10 items-center justify-center rounded-full px-4 text-sm font-bold"
+              className="btn-soft mt-4 inline-flex h-10 items-center justify-center rounded-full px-4 text-sm font-semibold"
             >
               {isExpanded ? "Show less" : `Show all ${tickets.length}`}
             </button>
           ) : null}
         </>
       ) : (
-        <div className="rounded-2xl border border-dashed border-[#d8cfc1] bg-[#fbfaf7] px-4 py-8 text-center text-sm font-medium text-[#737064]">
+        <div className="flex items-center gap-3 rounded-lg bg-surface-muted px-4 py-5 text-xs text-ink-muted">
+          <CheckCircle2 size={16} className="shrink-0 text-slate-400" />
           {emptyMessage}
         </div>
       )}
@@ -548,12 +566,10 @@ function NewTicketModal({
   const [draft, setDraft] = useState<DraftTicket>(emptyDraft);
   const titleRef = useRef<HTMLInputElement | null>(null);
   const draftTeamUsers = usersForTeam(data.users, draft.assignedTeamId || null);
-
-  useEffect(() => {
-    if (!isOpen) return;
-    const focusTimeout = window.setTimeout(() => titleRef.current?.focus(), 50);
-    return () => window.clearTimeout(focusTimeout);
-  }, [isOpen]);
+  const dialogRef = useDialogFocus(isOpen, () => {
+    setDraft(emptyDraft);
+    onClose();
+  });
 
   if (!isOpen) return null;
 
@@ -577,21 +593,26 @@ function NewTicketModal({
       onClick={resetAndClose}
     >
       <div
-        className="max-h-[calc(100vh-2rem)] w-full max-w-md overflow-y-auto rounded-[28px] border border-[#e7dfd2] bg-white p-6 shadow-xl"
+        ref={dialogRef}
+        tabIndex={-1}
+        className="max-h-[calc(100vh-2rem)] w-full max-w-md overflow-y-auto rounded-xl border border-border bg-white p-6 shadow-xl"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="mb-4 flex items-start justify-between gap-3">
           <div>
-            <h2 id="new-request-title" className="text-lg font-bold text-[#1f2937]">
+            <h2
+              id="new-request-title"
+              className="text-lg font-semibold text-ink"
+            >
               New request
             </h2>
-            <p className="text-sm text-[#737064]">Add a task for the team.</p>
+            <p className="text-sm text-ink-muted">Add a task for the team.</p>
           </div>
           <button
             type="button"
             onClick={resetAndClose}
             aria-label="Close"
-            className="flex h-8 w-8 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"
+            className="flex h-8 w-8 items-center justify-center rounded-full text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900"
           >
             <X className="h-4 w-4" />
           </button>
@@ -601,19 +622,24 @@ function NewTicketModal({
             labelText="Title"
             inputRef={titleRef}
             value={draft.title}
-            onChange={(value) => setDraft((next) => ({ ...next, title: value }))}
+            onChange={(value) =>
+              setDraft((next) => ({ ...next, title: value }))
+            }
             placeholder="What needs help?"
           />
-          <label className="grid gap-1.5 text-[11px] font-bold uppercase tracking-[0.08em] text-[#737064]">
+          <label className="grid gap-1.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-muted">
             Notes
             <textarea
               value={draft.description}
               onChange={(event) =>
-                setDraft((next) => ({ ...next, description: event.target.value }))
+                setDraft((next) => ({
+                  ...next,
+                  description: event.target.value,
+                }))
               }
               rows={4}
               placeholder="Add the important context."
-              className="input-field w-full resize-none rounded-2xl px-3 py-2.5 text-sm normal-case tracking-normal text-slate-900 placeholder:text-slate-400"
+              className="input-field w-full resize-none rounded-lg px-3 py-2.5 text-sm normal-case tracking-normal text-slate-900 placeholder:text-slate-400"
             />
           </label>
           <div className="grid grid-cols-2 gap-3">
@@ -674,7 +700,7 @@ function NewTicketModal({
           <button
             type="submit"
             disabled={!draft.title.trim() || isPending || !canMutate}
-            className="btn-primary mt-2 inline-flex h-11 items-center justify-center gap-2 rounded-full px-4 text-sm font-bold disabled:opacity-60"
+            className="btn-primary mt-2 inline-flex h-11 items-center justify-center gap-2 rounded-full px-4 text-sm font-semibold disabled:opacity-60"
           >
             <Send className="h-4 w-4" />
             Create request
@@ -686,8 +712,18 @@ function NewTicketModal({
 }
 
 export function HomeConsole({ initialData }: { initialData: DashboardData }) {
-  const { data, notice, isPending, runMutation, refresh, checkHealth, createTicket } =
-    useDashboardState(initialData, { ticketScope: "active", ticketLimit: 20 });
+  const {
+    data,
+    notice,
+    isPending,
+    runMutation,
+    refresh,
+    checkHealth,
+    createTicket,
+  } = useDashboardState(initialData, {
+    ticketScope: "active",
+    ticketLimit: 20,
+  });
   const [isNewTicketOpen, setIsNewTicketOpen] = useState(false);
 
   const nowMs = new Date(data.refreshedAt).getTime();
@@ -734,7 +770,7 @@ export function HomeConsole({ initialData }: { initialData: DashboardData }) {
             type="button"
             onClick={() => setIsNewTicketOpen(true)}
             disabled={!canMutate}
-            className="btn-primary inline-flex h-10 items-center justify-center gap-2 rounded-full px-4 text-[13px] font-bold disabled:opacity-60"
+            className="btn-primary inline-flex h-10 items-center justify-center gap-2 rounded-full px-4 text-[13px] font-semibold disabled:opacity-60"
           >
             <Plus className="h-4 w-4" />
             New request
@@ -742,73 +778,100 @@ export function HomeConsole({ initialData }: { initialData: DashboardData }) {
         </>
       }
     >
-      <section className="mx-auto grid max-w-[1120px] gap-5 px-4 py-5 sm:px-6">
-        <section className="rounded-[32px] border border-[#e7dfd2] bg-white p-5 shadow-sm sm:p-6">
-          <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px] lg:items-center">
-            <div>
-              <div className="inline-flex items-center gap-2 rounded-full bg-[#e8f7f3] px-3 py-1 text-[12px] font-bold text-[#1f6f61] ring-1 ring-[#c7eee4]">
-                <RadioTower className="h-3.5 w-3.5" />
-                Live intake
-              </div>
-              <h2 className="mt-4 max-w-2xl text-3xl font-bold tracking-tight text-[#1f2937] sm:text-4xl">
-                Your alert desk is listening.
-              </h2>
-              <p className="mt-3 max-w-2xl text-[15px] leading-7 text-[#5f625d]">
-                Watch the live queue, confirm the database is connected, and
-                jump straight into setup or ticket work without landing on the
-                same page twice.
-              </p>
-              <div className="mt-5 flex flex-wrap gap-2">
-                <Link
-                  href="/tickets"
-                  className="btn-primary inline-flex h-11 items-center justify-center gap-2 rounded-full px-4 text-sm font-bold"
-                >
-                  <Inbox className="h-4 w-4" />
-                  Open tickets
-                </Link>
-                <Link
-                  href="/settings"
-                  className="btn-soft inline-flex h-11 items-center justify-center gap-2 rounded-full px-4 text-sm font-bold"
-                >
-                  <Settings className="h-4 w-4" />
-                  Setup intake
-                </Link>
-                <button
-                  type="button"
-                  onClick={() =>
-                    runMutation(() => refresh().then(() => "Refreshed"))
-                  }
-                  disabled={isPending}
-                  className="btn-soft inline-flex h-11 items-center justify-center gap-2 rounded-full px-4 text-sm font-bold disabled:opacity-60"
-                >
-                  <RotateCcw
-                    className={`h-4 w-4 ${isPending ? "animate-spin" : ""}`}
-                  />
-                  Refresh
-                </button>
+      <section className="page-content grid gap-6">
+        <section className="command-hero">
+          <div>
+            <div className="hero-eyebrow">
+              <RadioTower className="h-3.5 w-3.5" />
+              {isLive ? "Your service workspace" : "Demo workspace"}
+            </div>
+            <h2>
+              Less noise.
+              <br />
+              More resolved.
+            </h2>
+            <p>
+              A clear view of the work that matters. Triage incoming requests,
+              keep your team moving, and close the loop with confidence.
+            </p>
+            <div className="hero-actions">
+              <Link
+                href="/tickets"
+                className="btn-primary inline-flex h-11 items-center justify-center gap-2 rounded-full px-4 text-sm font-semibold"
+              >
+                Go to ticket queue
+                <ArrowRight className="h-4 w-4" />
+              </Link>
+              <Link href="/settings" className="hero-secondary">
+                <Settings className="h-4 w-4" />
+                Configure intake
+              </Link>
+              <button
+                type="button"
+                onClick={() =>
+                  runMutation(() => refresh().then(() => "Refreshed"))
+                }
+                disabled={isPending}
+                className="hero-secondary disabled:opacity-60"
+                aria-label="Refresh dashboard"
+              >
+                <RotateCcw
+                  className={`h-4 w-4 ${isPending ? "animate-spin" : ""}`}
+                />
+              </button>
+            </div>
+          </div>
+
+          <div className="workflow-preview" aria-label="Service workflow">
+            <div className="workflow-preview-label">
+              Every request. A clear path.
+            </div>
+            <div className="workflow-stage">
+              <span>01</span>
+              <div>
+                Triage & route<small>Jev classifies. Your rules assign.</small>
               </div>
             </div>
-
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
-              <SummaryCount label="Open tickets" value={data.ticketCounts.active} />
-              <SummaryCount label="High priority" value={data.ticketCounts.urgent} />
-              <SummaryCount label="Teams on call" value={staffedTeams} />
+            <div className="workflow-stage">
+              <span>02</span>
+              <div>
+                Resolve & document<small>Technicians take the lead.</small>
+              </div>
+            </div>
+            <div className="workflow-stage">
+              <span>03</span>
+              <div>
+                Review & improve<small>Evidence informs the next step.</small>
+              </div>
             </div>
           </div>
         </section>
 
-        <div className="grid gap-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(340px,0.85fr)]">
-          <section className="rounded-[28px] border border-[#e7dfd2] bg-white/80 p-4 shadow-sm sm:p-5">
+        <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+          <SummaryCount label="Open tickets" value={data.ticketCounts.active} />
+          <SummaryCount
+            label="High priority"
+            value={data.ticketCounts.urgent}
+          />
+          <SummaryCount
+            label="SLA overdue"
+            value={data.ticketCounts.breached}
+          />
+          <SummaryCount label="Teams on call" value={staffedTeams} />
+        </div>
+
+        <div className="grid gap-6 xl:grid-cols-[minmax(0,1.6fr)_minmax(280px,1fr)]">
+          <section className="rounded-xl border border-border bg-white/80 p-4 shadow-sm sm:p-5">
             <div className="mb-4 flex items-start justify-between gap-4">
               <div className="min-w-0">
-                <h2 className="text-[18px] font-bold tracking-tight text-[#1f2937]">
-                  Needs eyes first
+                <h2 className="text-[18px] font-semibold tracking-tight text-ink">
+                  Priority inbox
                 </h2>
-                <p className="mt-1 text-sm leading-5 text-[#737064]">
+                <p className="mt-1 text-sm leading-5 text-ink-muted">
                   Open P1 and P2 work pulled out of the queue.
                 </p>
               </div>
-              <span className="rounded-full bg-[#f7f5f0] px-3 py-1 text-[12px] font-bold tabular-nums text-[#24324a] ring-1 ring-[#e7dfd2]">
+              <span className="rounded-full bg-background px-3 py-1 text-[12px] font-semibold tabular-nums text-ink ring-1 ring-border">
                 {data.ticketCounts.urgent}
               </span>
             </div>
@@ -819,23 +882,25 @@ export function HomeConsole({ initialData }: { initialData: DashboardData }) {
                 ))}
               </div>
             ) : (
-              <div className="rounded-2xl border border-dashed border-[#d8cfc1] bg-[#fbfaf7] px-4 py-10 text-center text-sm font-medium text-[#737064]">
+              <div className="rounded-lg border border-dashed border-border bg-surface-muted px-4 py-10 text-center text-sm font-medium text-ink-muted">
                 No high-priority open work right now.
               </div>
             )}
           </section>
 
-          <section className="rounded-[28px] border border-[#e7dfd2] bg-white p-5 shadow-sm">
+          <section className="rounded-xl border border-border bg-white p-5 shadow-sm">
             <div className="flex items-start gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-[#e8f7f3] text-[#1f6f61] ring-1 ring-[#c7eee4]">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-accent-soft text-accent ring-1 ring-blue-100">
                 <ShieldCheck className="h-5 w-5" />
               </div>
               <div>
-                <h2 className="text-lg font-bold text-[#1f2937]">
+                <h2 className="text-lg font-semibold text-ink">
                   System status
                 </h2>
-                <p className="mt-1 text-sm leading-5 text-[#737064]">
-                  Production is using {isLive ? "Neon database data" : "demo data"}.
+                <p className="mt-1 text-sm leading-5 text-ink-muted">
+                  {isLive
+                    ? "Connected to your live workspace."
+                    : "You’re exploring with demo data."}
                 </p>
               </div>
             </div>
@@ -869,7 +934,7 @@ export function HomeConsole({ initialData }: { initialData: DashboardData }) {
             </div>
             <Link
               href="/overview"
-              className="btn-soft mt-5 inline-flex h-11 w-full items-center justify-center gap-2 rounded-full px-4 text-sm font-bold"
+              className="btn-soft mt-5 inline-flex h-11 w-full items-center justify-center gap-2 rounded-full px-4 text-sm font-semibold"
             >
               <Activity className="h-4 w-4" />
               View overview
@@ -877,26 +942,26 @@ export function HomeConsole({ initialData }: { initialData: DashboardData }) {
           </section>
         </div>
 
-        <section className="rounded-[28px] border border-[#e7dfd2] bg-white/80 p-4 shadow-sm sm:p-5">
+        <section className="rounded-xl border border-border bg-white/80 p-4 shadow-sm sm:p-5">
           <div className="mb-4 flex items-start justify-between gap-4">
             <div>
-              <h2 className="text-[18px] font-bold tracking-tight text-[#1f2937]">
+              <h2 className="text-[18px] font-semibold tracking-tight text-ink">
                 Recent movement
               </h2>
-              <p className="mt-1 text-sm leading-5 text-[#737064]">
+              <p className="mt-1 text-sm leading-5 text-ink-muted">
                 Latest open tickets by update time.
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <Link
                 href="/archive"
-                className="rounded-full bg-white px-3 py-1.5 text-[12px] font-bold text-[#737064] ring-1 ring-[#e7dfd2] hover:bg-[#fbfaf7]"
+                className="rounded-full bg-white px-3 py-1.5 text-[12px] font-semibold text-ink-muted ring-1 ring-border hover:bg-surface-muted"
               >
                 Archive
               </Link>
               <Link
                 href="/tickets"
-                className="rounded-full bg-[#f7f5f0] px-3 py-1.5 text-[12px] font-bold text-[#24324a] ring-1 ring-[#e7dfd2] hover:bg-white"
+                className="rounded-full bg-background px-3 py-1.5 text-[12px] font-semibold text-ink ring-1 ring-border hover:bg-white"
               >
                 See all
               </Link>
@@ -905,33 +970,33 @@ export function HomeConsole({ initialData }: { initialData: DashboardData }) {
           {recentTickets.length > 0 ? (
             <div className="grid gap-2 md:grid-cols-2">
               {recentTickets.map((ticket) => (
-              <Link
-                key={ticket.id}
-                href={`/tickets/${ticket.id}`}
-                className="rounded-2xl border border-[#e7dfd2] bg-white px-4 py-3 transition hover:-translate-y-0.5 hover:border-[#cfc4b4] hover:shadow-sm"
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <span
-                    className={`inline-flex h-6 items-center gap-1 rounded-full px-2.5 text-[11px] font-bold ${priorityClass[ticket.priority]}`}
-                  >
-                    {priorityIcon(ticket.priority)}
-                    {friendlyPriority(ticket.priority)}
-                  </span>
-                  <span className="shrink-0 font-mono text-[10px] font-bold tracking-wide text-[#737064]">
-                    TK-{ticket.ticketNumber}
-                  </span>
-                </div>
-                <p className="mt-2 truncate text-sm font-bold text-[#1f2937]">
-                  {ticket.title}
-                </p>
-                <p className="mt-1 truncate text-[12px] text-[#737064]">
-                  {ticket.team} / {ticket.assignee}
-                </p>
-              </Link>
+                <Link
+                  key={ticket.id}
+                  href={`/tickets/${ticket.id}`}
+                  className="rounded-lg border border-border bg-white px-4 py-3 transition-colors hover:border-blue-200 hover:shadow-sm"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <span
+                      className={`inline-flex h-6 items-center gap-1 rounded-full px-2.5 text-[11px] font-semibold ${priorityClass[ticket.priority]}`}
+                    >
+                      {priorityIcon(ticket.priority)}
+                      {friendlyPriority(ticket.priority)}
+                    </span>
+                    <span className="shrink-0 font-mono text-[10px] font-semibold tracking-wide text-ink-muted">
+                      TK-{ticket.ticketNumber}
+                    </span>
+                  </div>
+                  <p className="mt-2 truncate text-sm font-semibold text-ink">
+                    {ticket.title}
+                  </p>
+                  <p className="mt-1 truncate text-[12px] text-ink-muted">
+                    {ticket.team} / {ticket.assignee}
+                  </p>
+                </Link>
               ))}
             </div>
           ) : (
-            <div className="rounded-2xl border border-dashed border-[#d8cfc1] bg-[#fbfaf7] px-4 py-8 text-center text-sm font-medium text-[#737064]">
+            <div className="rounded-lg border border-dashed border-border bg-surface-muted px-4 py-8 text-center text-sm font-medium text-ink-muted">
               No open tickets right now. Completed work is in the archive.
             </div>
           )}
@@ -960,17 +1025,15 @@ function StatusRow({
   good: boolean;
 }) {
   return (
-    <div className="flex items-center justify-between gap-3 rounded-2xl border border-[#e7dfd2] bg-[#fbfaf7] px-3 py-3">
-      <span className="text-sm font-bold text-[#1f2937]">{label}</span>
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-surface-muted px-3 py-3">
+      <span className="text-sm font-semibold text-ink">{label}</span>
       <span
-        className={`inline-flex items-center gap-2 rounded-full bg-white px-2.5 py-1 text-[12px] font-bold ring-1 ${
-          good
-            ? "text-[#1f6f61] ring-[#c7eee4]"
-            : "text-amber-700 ring-amber-100"
+        className={`inline-flex min-w-0 items-center gap-2 break-all rounded bg-white px-2.5 py-1 text-[11px] font-medium ring-1 ${
+          good ? "text-accent ring-blue-100" : "text-amber-700 ring-amber-100"
         }`}
       >
         <span
-          className={`h-2 w-2 rounded-full ${
+          className={`h-1.5 w-1.5 shrink-0 rounded-full ${
             good ? "bg-emerald-500" : "bg-amber-500"
           }`}
         />
@@ -1001,11 +1064,10 @@ export function TriageConsole({
     refresh,
     loadMoreTickets,
     createTicket,
-  } =
-    useDashboardState(initialData, {
-      ticketScope: mode === "archive" ? "archive" : "active",
-      ticketLimit: 100,
-    });
+  } = useDashboardState(initialData, {
+    ticketScope: mode === "archive" ? "archive" : "active",
+    ticketLimit: 100,
+  });
   const [query, setQuery] = useState("");
   const [priorityFilter, setPriorityFilter] = useState<"all" | Priority>("all");
   const [statusFilter, setStatusFilter] = useState<FilterStatus>("all");
@@ -1065,8 +1127,7 @@ export function TriageConsole({
 
   const humanTriageTickets = filteredTickets.filter(
     (ticket) =>
-      isActive(ticket) &&
-      Boolean(ticket.intakeAssessment?.needsHumanTriage),
+      isActive(ticket) && Boolean(ticket.intakeAssessment?.needsHumanTriage),
   );
   const needsAttentionTickets = filteredTickets.filter((ticket) => {
     if (!isActive(ticket) || ticket.status === "waiting") return false;
@@ -1121,7 +1182,7 @@ export function TriageConsole({
           {isArchive ? (
             <Link
               href="/tickets"
-              className="btn-soft inline-flex h-10 items-center justify-center gap-2 rounded-full px-4 text-[13px] font-bold"
+              className="btn-soft inline-flex h-10 items-center justify-center gap-2 rounded-full px-4 text-[13px] font-semibold"
             >
               <Inbox className="h-4 w-4" />
               Open tickets
@@ -1131,7 +1192,7 @@ export function TriageConsole({
               type="button"
               onClick={() => setIsNewTicketOpen(true)}
               disabled={!canMutate}
-              className="btn-soft inline-flex h-10 items-center justify-center gap-2 rounded-full px-4 text-[13px] font-bold disabled:opacity-60"
+              className="btn-soft inline-flex h-10 items-center justify-center gap-2 rounded-full px-4 text-[13px] font-semibold disabled:opacity-60"
             >
               <Plus className="h-4 w-4" />
               New request
@@ -1141,79 +1202,90 @@ export function TriageConsole({
             type="button"
             onClick={() => runMutation(() => refresh().then(() => "Refreshed"))}
             disabled={isPending}
-            className="btn-primary inline-flex h-10 items-center justify-center gap-2 rounded-full px-4 text-[13px] font-bold disabled:opacity-60"
+            className="btn-primary inline-flex h-10 items-center justify-center gap-2 rounded-full px-4 text-[13px] font-semibold disabled:opacity-60"
           >
-            <RotateCcw className={`h-4 w-4 ${isPending ? "animate-spin" : ""}`} />
+            <RotateCcw
+              className={`h-4 w-4 ${isPending ? "animate-spin" : ""}`}
+            />
             Refresh
           </button>
         </>
       }
     >
-      <section className="mx-auto grid max-w-[1080px] gap-5 px-4 py-5 sm:px-6">
-        <section className="rounded-[32px] border border-[#e7dfd2] bg-white p-5 shadow-sm sm:p-6">
-          <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_300px] lg:items-center">
-            <div>
-              <div className="inline-flex items-center gap-2 rounded-full bg-[#e8f7f3] px-3 py-1 text-[12px] font-bold text-[#1f6f61] ring-1 ring-[#c7eee4]">
-                <Sparkles className="h-3.5 w-3.5" />
-                {isArchive ? "Completed work" : "Guided helpdesk"}
-              </div>
-              <h2 className="mt-4 max-w-2xl text-2xl font-bold tracking-tight text-[#1f2937] sm:text-3xl">
-                {isArchive
-                  ? "Resolved tickets are out of the queue, but still easy to find."
-                  : "Start with the requests that need a person."}
-              </h2>
-              <p className="mt-3 max-w-2xl text-[15px] leading-7 text-[#5f625d]">
-                {isArchive
-                  ? "Use this archive when you need to review what was marked done or closed."
-                  : "The day is grouped into simple work buckets so anyone can see what to pick up and what is waiting."}
-              </p>
+      <section className="page-content grid gap-6">
+        <section className="queue-intro">
+          <div>
+            <div className="section-kicker">
+              {isArchive
+                ? "The record of your work"
+                : "Triage. Assign. Resolve."}
             </div>
-            <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
-              {isArchive ? (
-                <>
-                  <SummaryCount label="Resolved" value={data.ticketCounts.resolved} />
-                  <SummaryCount label="Closed" value={data.ticketCounts.closed} />
-                  <SummaryCount label="Archived" value={archivedTicketCount} />
-                </>
-              ) : (
-                <>
-                  <SummaryCount label="Needs attention" value={data.ticketCounts.needsAttention} />
-                  <SummaryCount label="Waiting" value={data.ticketCounts.waiting} />
-                  <SummaryCount label="Archived" value={archivedTicketCount} />
-                </>
-              )}
-            </div>
+            <h2>
+              {isArchive
+                ? "Closed loops, complete history."
+                : "Your next move starts here."}
+            </h2>
+            <p>
+              {isArchive
+                ? "Find completed requests, revisit the evidence, and reopen anything that needs another look."
+                : "A focused queue, organized by what needs you. Start with human triage, then move through the work."}
+            </p>
           </div>
         </section>
+        <div className="grid grid-cols-3 gap-3">
+          {isArchive ? (
+            <>
+              <SummaryCount
+                label="Resolved"
+                value={data.ticketCounts.resolved}
+              />
+              <SummaryCount label="Closed" value={data.ticketCounts.closed} />
+              <SummaryCount label="Archived" value={archivedTicketCount} />
+            </>
+          ) : (
+            <>
+              <SummaryCount
+                label="Needs attention"
+                value={data.ticketCounts.needsAttention}
+              />
+              <SummaryCount label="Waiting" value={data.ticketCounts.waiting} />
+              <SummaryCount label="Archived" value={archivedTicketCount} />
+            </>
+          )}
+        </div>
 
-        <section className="rounded-[28px] border border-[#e7dfd2] bg-white/75 p-4 shadow-sm sm:p-5">
-          <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+        <section className="rounded-xl border border-border bg-white/75 p-4 shadow-sm sm:p-5">
+          <div className="grid gap-3">
             <label className="grid gap-1.5">
-              <span className="text-[12px] font-bold uppercase tracking-[0.1em] text-[#737064]">
+              <span className="text-[12px] font-semibold uppercase tracking-[0.1em] text-ink-muted">
                 Search loaded requests
               </span>
               <span className="relative">
-                <Search className="pointer-events-none absolute left-3 top-3.5 h-4 w-4 text-[#737064]" />
+                <Search className="pointer-events-none absolute left-3 top-3.5 h-4 w-4 text-ink-muted" />
                 <input
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
                   placeholder="Customer, ticket number, owner, or title"
-                  className="input-field h-11 w-full rounded-2xl pl-9 pr-3 text-sm text-slate-900 placeholder:text-slate-400"
+                  className="input-field h-11 w-full rounded-lg pl-9 pr-3 text-sm text-slate-900 placeholder:text-slate-400"
                 />
               </span>
             </label>
-            <details className="rounded-2xl border border-[#e7dfd2] bg-[#fbfaf7] px-3 py-2">
-              <summary className="flex h-7 cursor-pointer list-none items-center justify-between gap-6 text-[13px] font-bold text-[#24324a]">
+            <details className="rounded-lg border border-border bg-surface-muted px-3 py-2">
+              <summary className="flex h-7 cursor-pointer list-none items-center justify-between gap-6 text-[13px] font-semibold text-ink">
                 <span className="inline-flex items-center gap-2">
-                  <SlidersHorizontal className="h-4 w-4 text-[#737064]" />
+                  <SlidersHorizontal className="h-4 w-4 text-ink-muted" />
                   Filters
                 </span>
-                <span className="text-[12px] text-[#737064]">
+                <span className="text-[12px] text-ink-muted">
                   {hasActiveFilters ? "On" : "Off"}
                 </span>
               </summary>
-              <div className="mt-3 grid min-w-[min(680px,calc(100vw-3rem))] gap-2 sm:grid-cols-[1fr_1fr_1fr_auto]">
-                <SelectField labelText="Status" value={statusFilter} onChange={(value) => setStatusFilter(value as FilterStatus)}>
+              <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_1fr_1fr_auto]">
+                <SelectField
+                  labelText="Status"
+                  value={statusFilter}
+                  onChange={(value) => setStatusFilter(value as FilterStatus)}
+                >
                   <option value="all">All</option>
                   {statusOptions.map((status) => (
                     <option key={status} value={status}>
@@ -1221,7 +1293,13 @@ export function TriageConsole({
                     </option>
                   ))}
                 </SelectField>
-                <SelectField labelText="Priority" value={priorityFilter} onChange={(value) => setPriorityFilter(value as "all" | Priority)}>
+                <SelectField
+                  labelText="Priority"
+                  value={priorityFilter}
+                  onChange={(value) =>
+                    setPriorityFilter(value as "all" | Priority)
+                  }
+                >
                   <option value="all">All</option>
                   {priorities.map((priority) => (
                     <option key={priority} value={priority}>
@@ -1229,7 +1307,11 @@ export function TriageConsole({
                     </option>
                   ))}
                 </SelectField>
-                <SelectField labelText="Team" value={teamFilter} onChange={setTeamFilter}>
+                <SelectField
+                  labelText="Team"
+                  value={teamFilter}
+                  onChange={setTeamFilter}
+                >
                   <option value="all">All</option>
                   {data.teams.map((team) => (
                     <option key={team.id} value={team.id}>
@@ -1238,7 +1320,11 @@ export function TriageConsole({
                   ))}
                 </SelectField>
                 <div className="flex items-end">
-                  <button type="button" onClick={resetFilters} className="btn-soft inline-flex h-11 w-full items-center justify-center rounded-full px-4 text-sm font-bold">
+                  <button
+                    type="button"
+                    onClick={resetFilters}
+                    className="btn-soft inline-flex h-11 w-full items-center justify-center rounded-full px-4 text-sm font-semibold"
+                  >
                     Reset
                   </button>
                 </div>
@@ -1255,7 +1341,7 @@ export function TriageConsole({
                         setTeamFilter("all");
                         setShowBreachedOnly(false);
                       }}
-                      className="rounded-full border border-emerald-100 bg-white px-3 py-1.5 text-[12px] font-bold text-emerald-700 transition hover:bg-emerald-50"
+                      className="rounded-full border border-emerald-100 bg-white px-3 py-1.5 text-[12px] font-semibold text-emerald-700 transition-colors hover:bg-emerald-50"
                     >
                       Resolved
                     </button>
@@ -1268,45 +1354,45 @@ export function TriageConsole({
                         setTeamFilter("all");
                         setShowBreachedOnly(false);
                       }}
-                      className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[12px] font-bold text-slate-700 transition hover:bg-slate-50"
+                      className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[12px] font-semibold text-slate-700 transition-colors hover:bg-slate-50"
                     >
                       Closed
                     </button>
                   </>
                 ) : (
                   <>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setQuery("");
-                    setPriorityFilter("P1");
-                    setStatusFilter("all");
-                    setTeamFilter("all");
-                    setShowBreachedOnly(false);
-                  }}
-                  className="rounded-full border border-red-100 bg-white px-3 py-1.5 text-[12px] font-bold text-red-700 transition hover:bg-red-50"
-                >
-                  High priority
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setQuery("");
-                    setPriorityFilter("all");
-                    setStatusFilter("all");
-                    setTeamFilter("all");
-                    setShowBreachedOnly(true);
-                  }}
-                  className="rounded-full border border-amber-100 bg-white px-3 py-1.5 text-[12px] font-bold text-amber-700 transition-colors duration-150 hover:bg-amber-50"
-                >
-                  Due now ({breachedTickets})
-                </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setQuery("");
+                        setPriorityFilter("P1");
+                        setStatusFilter("all");
+                        setTeamFilter("all");
+                        setShowBreachedOnly(false);
+                      }}
+                      className="rounded-full border border-red-100 bg-white px-3 py-1.5 text-[12px] font-semibold text-red-700 transition-colors hover:bg-red-50"
+                    >
+                      High priority
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setQuery("");
+                        setPriorityFilter("all");
+                        setStatusFilter("all");
+                        setTeamFilter("all");
+                        setShowBreachedOnly(true);
+                      }}
+                      className="rounded-full border border-amber-100 bg-white px-3 py-1.5 text-[12px] font-semibold text-amber-700 transition-colors duration-150 hover:bg-amber-50"
+                    >
+                      Due now ({breachedTickets})
+                    </button>
                   </>
                 )}
               </div>
             </details>
           </div>
-          <p className="mt-3 text-[12px] font-medium text-[#737064]">
+          <p className="mt-3 text-[12px] font-medium text-ink-muted">
             {filteredTickets.length} shown from {baseTickets.length} loaded of{" "}
             {isArchive ? archivedTicketCount : activeTicketCount} total{" "}
             {isArchive ? "archived" : "open"} tickets.{" "}
@@ -1322,28 +1408,65 @@ export function TriageConsole({
         <div className="grid gap-5">
           {isArchive ? (
             <>
-              <WorkBucket title="Resolved" helper="Completed requests that can still be reopened from the ticket detail page." tickets={resolvedTickets} nowMs={nowMs} emptyMessage="No resolved requests match the current filters." />
-              <WorkBucket title="Closed" helper="Closed requests kept for audit and follow-up review." tickets={closedTickets} nowMs={nowMs} emptyMessage="No closed requests match the current filters." />
+              <WorkBucket
+                title="Resolved"
+                helper="Completed requests that can still be reopened from the ticket detail page."
+                tickets={resolvedTickets}
+                nowMs={nowMs}
+                emptyMessage="No resolved requests match the current filters."
+              />
+              <WorkBucket
+                title="Closed"
+                helper="Closed requests kept for audit and follow-up review."
+                tickets={closedTickets}
+                nowMs={nowMs}
+                emptyMessage="No closed requests match the current filters."
+              />
             </>
           ) : (
             <>
-              <WorkBucket title="Needs human triage" helper="Jev marked these tickets as ambiguous, low-confidence, unavailable, or outside the configured team map." tickets={humanTriageTickets} nowMs={nowMs} emptyMessage="No tickets need a person to confirm the route." />
-              <WorkBucket title="Needs attention" helper="Pick from here first. These are new, urgent, unrouted, or due now." tickets={needsAttentionTickets} nowMs={nowMs} emptyMessage="Nothing needs immediate attention." />
-              <WorkBucket title="Next up" helper="Open requests that are ready for someone to continue." tickets={nextUpTickets} nowMs={nowMs} emptyMessage="No other open requests match the current filters." />
-              <WorkBucket title="Waiting" helper="Requests paused while the team waits for a reply or outside action." tickets={waitingTickets} nowMs={nowMs} emptyMessage="Nothing is waiting right now." />
-              <section className="rounded-[28px] border border-[#e7dfd2] bg-white/80 p-4 shadow-sm sm:p-5">
+              <WorkBucket
+                title="Needs human triage"
+                helper="Jev marked these tickets as ambiguous, low-confidence, unavailable, or outside the configured team map."
+                tickets={humanTriageTickets}
+                nowMs={nowMs}
+                emptyMessage="No tickets need a person to confirm the route."
+              />
+              <WorkBucket
+                title="Needs attention"
+                helper="Pick from here first. These are new, urgent, unrouted, or due now."
+                tickets={needsAttentionTickets}
+                nowMs={nowMs}
+                emptyMessage="Nothing needs immediate attention."
+              />
+              <WorkBucket
+                title="Next up"
+                helper="Open requests that are ready for someone to continue."
+                tickets={nextUpTickets}
+                nowMs={nowMs}
+                emptyMessage="No other open requests match the current filters."
+              />
+              <WorkBucket
+                title="Waiting"
+                helper="Requests paused while the team waits for a reply or outside action."
+                tickets={waitingTickets}
+                nowMs={nowMs}
+                emptyMessage="Nothing is waiting right now."
+              />
+              <section className="rounded-xl border border-border bg-white/80 p-4 shadow-sm sm:p-5">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div>
-                    <h2 className="text-[18px] font-bold tracking-tight text-[#1f2937]">
+                    <h2 className="text-[18px] font-semibold tracking-tight text-ink">
                       Completed work moved out of the way
                     </h2>
-                    <p className="mt-1 text-sm leading-5 text-[#737064]">
-                      Resolved and closed tickets leave this queue automatically.
+                    <p className="mt-1 text-sm leading-5 text-ink-muted">
+                      Resolved and closed tickets leave this queue
+                      automatically.
                     </p>
                   </div>
                   <Link
                     href="/archive"
-                    className="btn-soft inline-flex h-11 items-center justify-center gap-2 rounded-full px-4 text-sm font-bold"
+                    className="btn-soft inline-flex h-11 items-center justify-center gap-2 rounded-full px-4 text-sm font-semibold"
                   >
                     <CheckCircle2 className="h-4 w-4" />
                     View archive ({archivedTicketCount})
@@ -1359,7 +1482,7 @@ export function TriageConsole({
               type="button"
               onClick={() => runMutation(loadMoreTickets)}
               disabled={isPending}
-              className="btn-soft inline-flex h-11 items-center justify-center gap-2 rounded-full px-5 text-sm font-bold disabled:opacity-60"
+              className="btn-soft inline-flex h-11 items-center justify-center gap-2 rounded-full px-5 text-sm font-semibold disabled:opacity-60"
             >
               <RotateCcw
                 className={`h-4 w-4 ${isPending ? "animate-spin" : ""}`}
@@ -1369,7 +1492,14 @@ export function TriageConsole({
           </div>
         ) : null}
       </section>
-      <NewTicketModal isOpen={isNewTicketOpen} onClose={() => setIsNewTicketOpen(false)} data={data} onSubmit={submitNewTicket} isPending={isPending} canMutate={canMutate} />
+      <NewTicketModal
+        isOpen={isNewTicketOpen}
+        onClose={() => setIsNewTicketOpen(false)}
+        data={data}
+        onSubmit={submitNewTicket}
+        isPending={isPending}
+        canMutate={canMutate}
+      />
       <Notice message={notice} />
     </HelpdeskShell>
   );
@@ -1377,13 +1507,10 @@ export function TriageConsole({
 
 function SummaryCount({ label, value }: { label: string; value: number }) {
   return (
-    <div className="rounded-2xl bg-[#f7f5f0] p-4 ring-1 ring-[#e7dfd2]">
-      <p className="text-[12px] font-bold uppercase tracking-[0.1em] text-[#737064]">
-        {label}
-      </p>
-      <p className="mt-1 text-3xl font-bold tabular-nums text-[#24324a]">
-        {value}
-      </p>
+    <div className="metric-card">
+      <span aria-hidden="true" className="metric-marker" />
+      <p className="metric-label">{label}</p>
+      <p className="metric-value">{value.toLocaleString("en")}</p>
     </div>
   );
 }
@@ -1412,7 +1539,7 @@ export function TicketDetailConsole({
   >("resolved");
   const ticket = data.tickets.find((item) => item.id === ticketId) ?? null;
   const incident = ticket?.incidentId
-    ? data.incidents.find((item) => item.id === ticket.incidentId) ?? null
+    ? (data.incidents.find((item) => item.id === ticket.incidentId) ?? null)
     : null;
   const isLive = data.source === "database";
   const canMutate = isLive || (data.source === "demo" && !data.dbError);
@@ -1454,44 +1581,69 @@ export function TicketDetailConsole({
       subtitle={ticket ? `TK-${ticket.ticketNumber}` : "Tickets"}
       actions={
         <>
-          <HealthButton isLive={isLive} isPending={isPending} onClick={() => runMutation(checkHealth)} />
-          <button type="button" onClick={() => runMutation(() => refresh().then(() => "Refreshed"))} disabled={isPending} className="btn-primary inline-flex h-10 items-center justify-center gap-2 rounded-full px-4 text-[13px] font-bold disabled:opacity-60">
-            <RotateCcw className={`h-4 w-4 ${isPending ? "animate-spin" : ""}`} />
+          <HealthButton
+            isLive={isLive}
+            isPending={isPending}
+            onClick={() => runMutation(checkHealth)}
+          />
+          <button
+            type="button"
+            onClick={() => runMutation(() => refresh().then(() => "Refreshed"))}
+            disabled={isPending}
+            className="btn-primary inline-flex h-10 items-center justify-center gap-2 rounded-full px-4 text-[13px] font-semibold disabled:opacity-60"
+          >
+            <RotateCcw
+              className={`h-4 w-4 ${isPending ? "animate-spin" : ""}`}
+            />
             Refresh
           </button>
         </>
       }
     >
-      <section className="mx-auto max-w-[1120px] px-4 py-5 sm:px-6">
+      <section className="page-content">
         {ticket ? (
           <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
-            <section className="rounded-[32px] border border-[#e7dfd2] bg-white p-5 shadow-sm sm:p-6">
+            <section className="rounded-xl border border-border bg-white p-5 shadow-sm sm:p-6">
               <div className="flex flex-wrap items-center gap-2">
-                <span className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${priorityClass[ticket.priority]}`}>
+                <span
+                  className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${priorityClass[ticket.priority]}`}
+                >
                   {friendlyPriority(ticket.priority)}
                 </span>
-                <span className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${statusTone[ticket.status]}`}>
+                <span
+                  className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${statusTone[ticket.status]}`}
+                >
                   {friendlyStatus(ticket.status)}
                 </span>
-                <span className="rounded-full bg-[#f7f5f0] px-2.5 py-1 font-mono text-[11px] font-bold text-[#737064] ring-1 ring-[#e7dfd2]">
+                <span className="rounded-full bg-background px-2.5 py-1 font-mono text-[11px] font-semibold text-ink-muted ring-1 ring-border">
                   TK-{ticket.ticketNumber}
                 </span>
               </div>
-              <h2 className="mt-4 text-2xl font-bold tracking-tight text-[#1f2937] sm:text-3xl">
+              <h2 className="mt-4 text-2xl font-semibold tracking-tight text-ink sm:text-3xl">
                 {ticket.title}
               </h2>
-              <div className="mt-4 grid gap-3 text-sm text-[#5f625d] sm:grid-cols-2">
+              <div className="mt-4 grid gap-3 text-sm text-ink-muted sm:grid-cols-2">
                 <InfoLine label="Customer" value={customerLabel(ticket)} />
                 <InfoLine label="Owner" value={ticket.assignee} />
                 <InfoLine label="Team" value={ticket.team} />
-                <InfoLine label="Due" value={ticket.slaDueAt ? formatDateTime(ticket.slaDueAt) : "No due time"} />
+                <InfoLine
+                  label="Due"
+                  value={
+                    ticket.slaDueAt
+                      ? formatDateTime(ticket.slaDueAt)
+                      : "No due time"
+                  }
+                />
                 {ticket.repairshoprStatus ? (
-                  <InfoLine label="RepairShopr" value={ticket.repairshoprStatus} />
+                  <InfoLine
+                    label="RepairShopr"
+                    value={ticket.repairshoprStatus}
+                  />
                 ) : null}
               </div>
               <div className="mt-6 grid gap-3 sm:grid-cols-3">
                 {isRepairShoprTicket ? (
-                  <div className="rounded-2xl bg-[#fbfaf7] px-4 py-3 text-sm font-medium leading-6 text-[#5f625d] ring-1 ring-[#e7dfd2] sm:col-span-3">
+                  <div className="rounded-lg bg-surface-muted px-4 py-3 text-sm font-medium leading-6 text-ink-muted ring-1 ring-border sm:col-span-3">
                     RepairShopr owns this ticket status. Update it there so the
                     next sync does not replace a local-only change.
                   </div>
@@ -1509,14 +1661,13 @@ export function TicketDetailConsole({
                         })
                       }
                     >
-                      <CheckCircle2 className="h-4 w-4" />
-                      I am on it
+                      <CheckCircle2 className="h-4 w-4" />I am on it
                     </ActionButton>
                     <button
                       type="button"
                       disabled={isPending || !canMutate}
                       onClick={() => requestCompletion("resolved")}
-                      className="btn-success inline-flex h-11 items-center justify-center gap-2 rounded-full px-4 text-sm font-bold disabled:opacity-60"
+                      className="btn-success inline-flex h-11 items-center justify-center gap-2 rounded-full px-4 text-sm font-semibold disabled:opacity-60"
                     >
                       <CheckCircle2 className="h-4 w-4" />
                       Mark done
@@ -1541,58 +1692,110 @@ export function TicketDetailConsole({
               </div>
             </section>
 
-            <section className="rounded-[28px] border border-[#e7dfd2] bg-white p-5 shadow-sm">
-              <h3 className="text-lg font-bold text-[#1f2937]">Details</h3>
+            <section className="rounded-xl border border-border bg-white p-5 shadow-sm">
+              <h3 className="text-lg font-semibold text-ink">Details</h3>
               <div className="mt-4 grid gap-3">
                 {ticket.repairshoprUrl ? (
                   <Link
                     href={ticket.repairshoprUrl}
                     target="_blank"
                     rel="noreferrer"
-                    className="btn-soft inline-flex h-11 items-center justify-center gap-2 rounded-full px-4 text-sm font-bold"
+                    className="btn-soft inline-flex h-11 items-center justify-center gap-2 rounded-full px-4 text-sm font-semibold"
                   >
                     <Settings className="h-4 w-4" />
                     Open in RepairShopr
                   </Link>
                 ) : null}
-                <SelectField labelText={isRepairShoprTicket ? "Status (RepairShopr)" : "Status"} value={ticket.status} disabled={isPending || !canMutate || isRepairShoprTicket} onChange={(value) => {
-                  if (isActive(ticket) && (value === "resolved" || value === "closed")) {
-                    requestCompletion(value);
-                    return;
+                <SelectField
+                  labelText={
+                    isRepairShoprTicket ? "Status (RepairShopr)" : "Status"
                   }
-                  runMutation(async () => {
-                    await patchTicket(ticket.id, { status: value, comment: `Status changed to ${label(value)}.` });
-                    return "Status updated";
-                  });
-                }}>
+                  value={ticket.status}
+                  disabled={isPending || !canMutate || isRepairShoprTicket}
+                  onChange={(value) => {
+                    if (
+                      isActive(ticket) &&
+                      (value === "resolved" || value === "closed")
+                    ) {
+                      requestCompletion(value);
+                      return;
+                    }
+                    runMutation(async () => {
+                      await patchTicket(ticket.id, {
+                        status: value,
+                        comment: `Status changed to ${label(value)}.`,
+                      });
+                      return "Status updated";
+                    });
+                  }}
+                >
                   {statuses.map((status) => (
-                    <option key={status} value={status}>{statusLabel(status)}</option>
+                    <option key={status} value={status}>
+                      {statusLabel(status)}
+                    </option>
                   ))}
                 </SelectField>
-                <SelectField labelText="Priority" value={ticket.priority} disabled={isPending || !canMutate} onChange={(value) => runMutation(async () => {
-                  await patchTicket(ticket.id, { priority: value, comment: `Priority changed to ${value}.` });
-                  return "Priority updated";
-                })}>
+                <SelectField
+                  labelText="Priority"
+                  value={ticket.priority}
+                  disabled={isPending || !canMutate}
+                  onChange={(value) =>
+                    runMutation(async () => {
+                      await patchTicket(ticket.id, {
+                        priority: value,
+                        comment: `Priority changed to ${value}.`,
+                      });
+                      return "Priority updated";
+                    })
+                  }
+                >
                   {priorities.map((priority) => (
-                    <option key={priority} value={priority}>{friendlyPriority(priority)}</option>
+                    <option key={priority} value={priority}>
+                      {friendlyPriority(priority)}
+                    </option>
                   ))}
                 </SelectField>
-                <SelectField labelText="Team" value={ticket.assignedTeamId ?? ""} disabled={isPending || !canMutate} onChange={(value) => runMutation(async () => {
-                  await patchTicket(ticket.id, { assignedTeamId: value || null, assignedUserId: null, comment: "Team assignment updated." });
-                  return "Team updated";
-                })}>
+                <SelectField
+                  labelText="Team"
+                  value={ticket.assignedTeamId ?? ""}
+                  disabled={isPending || !canMutate}
+                  onChange={(value) =>
+                    runMutation(async () => {
+                      await patchTicket(ticket.id, {
+                        assignedTeamId: value || null,
+                        assignedUserId: null,
+                        comment: "Team assignment updated.",
+                      });
+                      return "Team updated";
+                    })
+                  }
+                >
                   <option value="">Unrouted</option>
                   {data.teams.map((team) => (
-                    <option key={team.id} value={team.id}>{team.name}</option>
+                    <option key={team.id} value={team.id}>
+                      {team.name}
+                    </option>
                   ))}
                 </SelectField>
-                <SelectField labelText="Owner" value={ticket.assignedUserId ?? ""} disabled={isPending || !canMutate} onChange={(value) => runMutation(async () => {
-                  await patchTicket(ticket.id, { assignedUserId: value || null, comment: "Owner assignment updated." });
-                  return "Owner updated";
-                })}>
+                <SelectField
+                  labelText="Owner"
+                  value={ticket.assignedUserId ?? ""}
+                  disabled={isPending || !canMutate}
+                  onChange={(value) =>
+                    runMutation(async () => {
+                      await patchTicket(ticket.id, {
+                        assignedUserId: value || null,
+                        comment: "Owner assignment updated.",
+                      });
+                      return "Owner updated";
+                    })
+                  }
+                >
                   <option value="">Unassigned</option>
                   {teamUsers.map((user) => (
-                    <option key={user.id} value={user.id}>{user.fullName ?? user.email}</option>
+                    <option key={user.id} value={user.id}>
+                      {user.fullName ?? user.email}
+                    </option>
                   ))}
                 </SelectField>
               </div>
@@ -1625,8 +1828,7 @@ export function TicketDetailConsole({
                   responseDeadline: ticket.routingDecision.responseDueAt
                     ? formatDateTime(ticket.routingDecision.responseDueAt)
                     : null,
-                  needsHumanTriage:
-                    ticket.routingDecision.needsHumanTriage,
+                  needsHumanTriage: ticket.routingDecision.needsHumanTriage,
                   routingReason: ticket.routingDecision.needsHumanTriage
                     ? "The assessment was ambiguous, unavailable, or below the routing confidence threshold."
                     : `${ticket.routingDecision.ruleVersion} applied the queue, priority, and deadline.`,
@@ -1634,13 +1836,13 @@ export function TicketDetailConsole({
               />
             ) : null}
             {ticket.intakeAssessment?.needsHumanTriage ? (
-              <span className="inline-flex h-6 items-center gap-1 rounded-full bg-amber-50 px-2.5 text-[11px] font-bold text-amber-800 ring-1 ring-amber-200">
+              <span className="inline-flex h-6 items-center gap-1 rounded-full bg-amber-50 px-2.5 text-[11px] font-semibold text-amber-800 ring-1 ring-amber-200">
                 Human triage
               </span>
             ) : null}
             {ticket.completionReview?.status === "succeeded" ? (
               <span
-                className={`inline-flex h-6 items-center gap-1 rounded-full px-2.5 text-[11px] font-bold ring-1 ${
+                className={`inline-flex h-6 items-center gap-1 rounded-full px-2.5 text-[11px] font-semibold ring-1 ${
                   ticket.completionReview.missingEvidenceCount > 0
                     ? "bg-amber-50 text-amber-800 ring-amber-200"
                     : "bg-emerald-50 text-emerald-700 ring-emerald-200"
@@ -1652,18 +1854,18 @@ export function TicketDetailConsole({
               </span>
             ) : ticket.completionReview?.status === "failed" ||
               ticket.completionReview?.status === "not_configured" ? (
-              <span className="inline-flex h-6 items-center gap-1 rounded-full bg-slate-50 px-2.5 text-[11px] font-bold text-slate-700 ring-1 ring-slate-200">
+              <span className="inline-flex h-6 items-center gap-1 rounded-full bg-slate-50 px-2.5 text-[11px] font-semibold text-slate-700 ring-1 ring-slate-200">
                 Review unavailable
               </span>
             ) : !isActive(ticket) ? (
-              <span className="inline-flex h-6 items-center gap-1 rounded-full bg-sky-50 px-2.5 text-[11px] font-bold text-sky-700 ring-1 ring-sky-200">
+              <span className="inline-flex h-6 items-center gap-1 rounded-full bg-sky-50 px-2.5 text-[11px] font-semibold text-sky-700 ring-1 ring-sky-200">
                 Review pending
               </span>
             ) : null}
 
-            <section className="rounded-[28px] border border-[#e7dfd2] bg-white p-5 shadow-sm lg:col-span-2">
-              <h3 className="text-lg font-bold text-[#1f2937]">Request</h3>
-              <p className="mt-3 whitespace-pre-wrap text-[15px] leading-7 text-[#5f625d]">
+            <section className="rounded-xl border border-border bg-white p-5 shadow-sm lg:col-span-2">
+              <h3 className="text-lg font-semibold text-ink">Request</h3>
+              <p className="mt-3 whitespace-pre-wrap text-[15px] leading-7 text-ink-muted">
                 {ticket.description || "No notes were included yet."}
               </p>
             </section>
@@ -1698,8 +1900,8 @@ export function TicketDetailConsole({
               />
             ) : null}
 
-            <section className="rounded-[28px] border border-[#e7dfd2] bg-white p-5 shadow-sm">
-              <h3 className="text-lg font-bold text-[#1f2937]">Notes</h3>
+            <section className="rounded-xl border border-border bg-white p-5 shadow-sm">
+              <h3 className="text-lg font-semibold text-ink">Notes</h3>
               <form onSubmit={submitNote} className="mt-4 grid gap-3">
                 <textarea
                   value={note}
@@ -1707,9 +1909,13 @@ export function TicketDetailConsole({
                   rows={5}
                   placeholder="Add a helpful update..."
                   disabled={isPending || !canMutate}
-                  className="input-field w-full resize-none rounded-2xl px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 disabled:bg-slate-50"
+                  className="input-field w-full resize-none rounded-lg px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 disabled:bg-slate-50"
                 />
-                <button type="submit" disabled={!note.trim() || isPending || !canMutate} className="btn-primary inline-flex h-11 items-center justify-center gap-2 rounded-full px-4 text-sm font-bold disabled:opacity-60">
+                <button
+                  type="submit"
+                  disabled={!note.trim() || isPending || !canMutate}
+                  className="btn-primary inline-flex h-11 items-center justify-center gap-2 rounded-full px-4 text-sm font-semibold disabled:opacity-60"
+                >
                   <MessageSquarePlus className="h-4 w-4" />
                   Add note
                 </button>
@@ -1720,14 +1926,19 @@ export function TicketDetailConsole({
             <Timeline ticket={ticket} />
           </div>
         ) : (
-          <div className="grid min-h-[520px] place-items-center rounded-[32px] border border-[#e7dfd2] bg-white p-8 text-center shadow-sm">
+          <div className="grid min-h-[520px] place-items-center rounded-xl border border-border bg-white p-8 text-center shadow-sm">
             <div>
-              <Sparkles className="mx-auto h-10 w-10 text-[#8dd6c6]" />
-              <p className="mt-4 text-lg font-bold text-[#1f2937]">Ticket not found</p>
-              <p className="mt-1 text-sm text-[#737064]">
+              <Sparkles className="mx-auto h-10 w-10 text-accent" />
+              <p className="mt-4 text-lg font-semibold text-ink">
+                Ticket not found
+              </p>
+              <p className="mt-1 text-sm text-ink-muted">
                 It may have been closed or removed from the current dashboard.
               </p>
-              <Link href="/" className="btn-primary mt-5 inline-flex h-10 items-center justify-center rounded-full px-4 text-sm font-bold">
+              <Link
+                href="/"
+                className="btn-primary mt-5 inline-flex h-10 items-center justify-center rounded-full px-4 text-sm font-semibold"
+              >
                 Back home
               </Link>
             </div>
@@ -1763,7 +1974,7 @@ function ActionButton({
       type="button"
       disabled={disabled}
       onClick={onClick}
-      className="btn-soft inline-flex h-11 items-center justify-center gap-2 rounded-full px-4 text-sm font-bold disabled:opacity-60"
+      className="btn-soft inline-flex h-11 items-center justify-center gap-2 rounded-full px-4 text-sm font-semibold disabled:opacity-60"
     >
       {children}
     </button>
@@ -1772,11 +1983,11 @@ function ActionButton({
 
 function InfoLine({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-2xl bg-[#f7f5f0] px-4 py-3 ring-1 ring-[#e7dfd2]">
-      <p className="text-[11px] font-bold uppercase tracking-[0.1em] text-[#737064]">
+    <div className="rounded-lg bg-background px-4 py-3 ring-1 ring-border">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-ink-muted">
         {label}
       </p>
-      <p className="mt-1 truncate font-bold text-[#1f2937]">{value}</p>
+      <p className="mt-1 truncate font-semibold text-ink">{value}</p>
     </div>
   );
 }
@@ -1789,14 +2000,17 @@ function IncidentContext({
   incident: IncidentSnapshot | null;
 }) {
   return (
-    <section className="rounded-[28px] border border-[#e7dfd2] bg-white p-5 shadow-sm">
-      <h3 className="text-lg font-bold text-[#1f2937]">Incident context</h3>
+    <section className="rounded-xl border border-border bg-white p-5 shadow-sm">
+      <h3 className="text-lg font-semibold text-ink">Incident context</h3>
       <div className="mt-4 grid gap-3 text-sm">
         <InfoLine label="Duplicates" value={String(ticket.duplicateCount)} />
-        <InfoLine label="Score" value={`${ticket.importanceScore} x ${ticket.urgencyScore}`} />
+        <InfoLine
+          label="Score"
+          value={`${ticket.importanceScore} x ${ticket.urgencyScore}`}
+        />
         <InfoLine label="Source" value={ticket.createdFrom} />
         {incident ? (
-          <p className="rounded-2xl bg-[#fbfaf7] p-4 leading-6 text-[#5f625d] ring-1 ring-[#e7dfd2]">
+          <p className="rounded-lg bg-surface-muted p-4 leading-6 text-ink-muted ring-1 ring-border">
             {incident.blastCount} linked alerts with confidence{" "}
             {incident.confidence ?? "n/a"}.
           </p>
@@ -1808,32 +2022,40 @@ function IncidentContext({
 
 function Timeline({ ticket }: { ticket: TicketQueueItem }) {
   return (
-    <section className="rounded-[28px] border border-[#e7dfd2] bg-white p-5 shadow-sm lg:col-span-2">
+    <section className="rounded-xl border border-border bg-white p-5 shadow-sm lg:col-span-2">
       <div className="flex items-center justify-between gap-3">
-        <h3 className="text-lg font-bold text-[#1f2937]">Activity</h3>
-        <span className="rounded-full bg-[#f7f5f0] px-3 py-1 text-[12px] font-bold text-[#737064] ring-1 ring-[#e7dfd2]">
+        <h3 className="text-lg font-semibold text-ink">Activity</h3>
+        <span className="rounded-full bg-background px-3 py-1 text-[12px] font-semibold text-ink-muted ring-1 ring-border">
           {ticket.comments.length} notes
         </span>
       </div>
       <div className="mt-5 grid gap-4">
         {ticket.comments.length > 0 ? (
           ticket.comments.map((item) => (
-            <div key={item.id} className="rounded-2xl bg-[#fbfaf7] p-4 ring-1 ring-[#e7dfd2]">
-              <p className="text-[14px] leading-6 text-[#1f2937]">{item.body}</p>
-              <p className="mt-2 text-[12px] font-medium text-[#737064]">
-                {item.authorEmail ?? "system"} / {formatDateTime(item.createdAt)}
+            <div
+              key={item.id}
+              className="rounded-lg bg-surface-muted p-4 ring-1 ring-border"
+            >
+              <p className="text-[14px] leading-6 text-ink">{item.body}</p>
+              <p className="mt-2 text-[12px] font-medium text-ink-muted">
+                {item.authorEmail ?? "system"} /{" "}
+                {formatDateTime(item.createdAt)}
               </p>
             </div>
           ))
         ) : (
-          <p className="text-sm text-[#737064]">No notes yet.</p>
+          <p className="text-sm text-ink-muted">No notes yet.</p>
         )}
       </div>
     </section>
   );
 }
 
-export function OverviewConsole({ initialData }: { initialData: DashboardData }) {
+export function OverviewConsole({
+  initialData,
+}: {
+  initialData: DashboardData;
+}) {
   const { data, notice, isPending, runMutation, refresh, checkHealth } =
     useDashboardState(initialData, { ticketScope: "active", ticketLimit: 50 });
   const nowMs = new Date(data.refreshedAt).getTime();
@@ -1857,64 +2079,93 @@ export function OverviewConsole({ initialData }: { initialData: DashboardData })
       subtitle="Overview"
       actions={
         <>
-          <HealthButton isLive={isLive} isPending={isPending} onClick={() => runMutation(checkHealth)} />
-          <button type="button" onClick={() => runMutation(() => refresh().then(() => "Refreshed"))} disabled={isPending} className="btn-primary inline-flex h-10 items-center justify-center gap-2 rounded-full px-4 text-[13px] font-bold disabled:opacity-60">
-            <RotateCcw className={`h-4 w-4 ${isPending ? "animate-spin" : ""}`} />
+          <HealthButton
+            isLive={isLive}
+            isPending={isPending}
+            onClick={() => runMutation(checkHealth)}
+          />
+          <button
+            type="button"
+            onClick={() => runMutation(() => refresh().then(() => "Refreshed"))}
+            disabled={isPending}
+            className="btn-primary inline-flex h-10 items-center justify-center gap-2 rounded-full px-4 text-[13px] font-semibold disabled:opacity-60"
+          >
+            <RotateCcw
+              className={`h-4 w-4 ${isPending ? "animate-spin" : ""}`}
+            />
             Refresh
           </button>
         </>
       }
     >
-      <section className="mx-auto grid max-w-[1120px] gap-5 px-4 py-5 sm:px-6">
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <SummaryCount label="Open requests" value={data.ticketCounts.active} />
-          <SummaryCount label="Need attention" value={data.ticketCounts.needsAttention} />
+      <section className="page-content grid gap-6">
+        <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+          <SummaryCount
+            label="Open requests"
+            value={data.ticketCounts.active}
+          />
+          <SummaryCount
+            label="Need attention"
+            value={data.ticketCounts.needsAttention}
+          />
           <SummaryCount label="Waiting" value={data.ticketCounts.waiting} />
           <SummaryCount label="Done" value={data.ticketCounts.archived} />
         </div>
         <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
-          <section className="rounded-[28px] border border-[#e7dfd2] bg-white p-5 shadow-sm">
-            <h2 className="text-lg font-bold text-[#1f2937]">Team rhythm</h2>
+          <section className="rounded-xl border border-border bg-white p-5 shadow-sm">
+            <h2 className="text-lg font-semibold text-ink">Workload by team</h2>
             <div className="mt-4 grid gap-3">
               {data.teamLoad.map((team) => (
-                <div key={team.team} className="rounded-2xl bg-[#fbfaf7] p-4 ring-1 ring-[#e7dfd2]">
+                <div
+                  key={team.team}
+                  className="rounded-lg bg-surface-muted p-4 ring-1 ring-border"
+                >
                   <div className="flex items-center justify-between gap-3">
-                    <span className="font-bold text-[#1f2937]">{team.team}</span>
-                    <span className="text-sm font-bold tabular-nums text-[#737064]">
+                    <span className="font-semibold text-ink">{team.team}</span>
+                    <span className="text-sm font-semibold tabular-nums text-ink-muted">
                       {team.openTickets} open
                     </span>
                   </div>
-                  <div className="mt-3 h-2 overflow-hidden rounded-full bg-[#ebe4d9]">
-                    <div className="h-full rounded-full bg-[#8dd6c6]" style={{ width: `${Math.min(100, team.openTickets * 16)}%` }} />
+                  <div className="mt-3 h-2 overflow-hidden rounded-full bg-blue-100">
+                    <div
+                      className="h-full rounded-full bg-accent"
+                      style={{
+                        width: `${Math.min(100, team.openTickets * 16)}%`,
+                      }}
+                    />
                   </div>
-                  <p className="mt-2 text-[12px] text-[#737064]">
+                  <p className="mt-2 text-[12px] text-ink-muted">
                     {team.urgentTickets} urgent, {team.members} members
                   </p>
                 </div>
               ))}
             </div>
           </section>
-          <section className="rounded-[28px] border border-[#e7dfd2] bg-white p-5 shadow-sm">
-            <h2 className="text-lg font-bold text-[#1f2937]">Due now</h2>
+          <section className="rounded-xl border border-border bg-white p-5 shadow-sm">
+            <h2 className="text-lg font-semibold text-ink">Due now</h2>
             <div className="mt-4 grid gap-3">
               {breachedTickets.length > 0 ? (
-                breachedTickets.slice(0, 5).map((ticket) => (
-                  <TicketTask key={ticket.id} ticket={ticket} nowMs={nowMs} />
-                ))
+                breachedTickets
+                  .slice(0, 5)
+                  .map((ticket) => (
+                    <TicketTask key={ticket.id} ticket={ticket} nowMs={nowMs} />
+                  ))
               ) : (
-                <p className="rounded-2xl bg-[#fbfaf7] p-4 text-sm text-[#737064] ring-1 ring-[#e7dfd2]">
+                <p className="rounded-lg bg-surface-muted p-4 text-sm text-ink-muted ring-1 ring-border">
                   Nothing is overdue.
                 </p>
               )}
             </div>
           </section>
         </div>
-        <section className="rounded-[28px] border border-[#e7dfd2] bg-white p-5 shadow-sm">
+        <section className="rounded-xl border border-border bg-white p-5 shadow-sm">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <h2 className="text-lg font-bold text-[#1f2937]">Recent open activity</h2>
+            <h2 className="text-lg font-semibold text-ink">
+              Recent open activity
+            </h2>
             <Link
               href="/archive"
-              className="rounded-full bg-[#f7f5f0] px-3 py-1.5 text-[12px] font-bold text-[#24324a] ring-1 ring-[#e7dfd2] hover:bg-white"
+              className="rounded-full bg-background px-3 py-1.5 text-[12px] font-semibold text-ink ring-1 ring-border hover:bg-white"
             >
               View archive
             </Link>
@@ -1926,7 +2177,7 @@ export function OverviewConsole({ initialData }: { initialData: DashboardData })
               ))}
             </div>
           ) : (
-            <p className="mt-4 rounded-2xl bg-[#fbfaf7] p-4 text-sm text-[#737064] ring-1 ring-[#e7dfd2]">
+            <p className="mt-4 rounded-lg bg-surface-muted p-4 text-sm text-ink-muted ring-1 ring-border">
               No open activity right now. Completed work is in the archive.
             </p>
           )}
@@ -1967,7 +2218,11 @@ const exampleProviders = [
   },
 ];
 
-export function SettingsConsole({ initialData }: { initialData: DashboardData }) {
+export function SettingsConsole({
+  initialData,
+}: {
+  initialData: DashboardData;
+}) {
   const initialRepairShopr = initialData.integrations?.repairshopr;
   const jevStatus = initialData.integrations?.jev;
   const [integrationTest, setIntegrationTest] = useState({
@@ -1975,15 +2230,14 @@ export function SettingsConsole({ initialData }: { initialData: DashboardData })
     apiKey: "",
     subject: "Integration smoke alert",
   });
-  const [repairShoprStatus, setRepairShoprStatus] = useState<RepairShoprUiStatus>(
-    {
+  const [repairShoprStatus, setRepairShoprStatus] =
+    useState<RepairShoprUiStatus>({
       configured: initialRepairShopr?.configured ?? false,
       connected: initialRepairShopr?.connected ?? false,
       lastSyncAt: initialRepairShopr?.lastSyncAt ?? null,
       lastStatus: initialRepairShopr?.lastStatus ?? "not_configured",
       lastError: null,
-    },
-  );
+    });
   const [repairShoprConfig, setRepairShoprConfig] = useState<{
     subdomain: string | null;
     apiKeyPresent: boolean | null;
@@ -2016,7 +2270,9 @@ export function SettingsConsole({ initialData }: { initialData: DashboardData })
         const message = await action();
         if (message) setNotice(message);
       } catch (error) {
-        setNotice(error instanceof Error ? error.message : "Something went wrong");
+        setNotice(
+          error instanceof Error ? error.message : "Something went wrong",
+        );
       }
     });
   }
@@ -2211,24 +2467,37 @@ export function SettingsConsole({ initialData }: { initialData: DashboardData })
       title="Settings"
       subtitle="Guided setup"
       actions={
-        <button type="button" onClick={() => runMutation(checkHealth)} disabled={isPending} className="btn-soft inline-flex h-10 items-center justify-center gap-2 rounded-full px-4 text-[13px] font-bold disabled:opacity-60">
+        <button
+          type="button"
+          onClick={() => runMutation(checkHealth)}
+          disabled={isPending}
+          className="btn-soft inline-flex h-10 items-center justify-center gap-2 rounded-full px-4 text-[13px] font-semibold disabled:opacity-60"
+        >
           <ShieldCheck className="h-4 w-4" />
           Check setup
         </button>
       }
     >
-      <section className="mx-auto grid max-w-[920px] gap-5 px-4 py-5 sm:px-6">
-        <SetupCard icon={<Database className="h-5 w-5" />} title="Receive requests by email" helper="Send inbound email events to this webhook so alerts become tickets.">
+      <section className="page-content grid gap-6">
+        <SetupCard
+          icon={<Database className="h-5 w-5" />}
+          title="Receive requests by email"
+          helper="Send inbound email events to this webhook so alerts become tickets."
+        >
           <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
-            <code className="rounded-2xl bg-[#fbfaf7] px-3 py-3 font-mono text-[12px] text-[#1f2937] ring-1 ring-[#e7dfd2]">
+            <code className="rounded-lg bg-surface-muted px-3 py-3 font-mono text-[12px] text-ink ring-1 ring-border">
               POST /api/webhooks/inbound-email
             </code>
-            <button type="button" onClick={copyWebhookUrl} className="btn-primary inline-flex h-11 items-center justify-center gap-2 rounded-full px-4 text-sm font-bold">
+            <button
+              type="button"
+              onClick={copyWebhookUrl}
+              className="btn-primary inline-flex h-11 items-center justify-center gap-2 rounded-full px-4 text-sm font-semibold"
+            >
               <Send className="h-4 w-4" />
               Copy URL
             </button>
           </div>
-          <p className="mt-3 text-sm leading-6 text-[#737064]">
+          <p className="mt-3 text-sm leading-6 text-ink-muted">
             Use your inbound webhook secret or Resend webhook secret in Vercel
             environment variables before sending live mail.
           </p>
@@ -2239,7 +2508,7 @@ export function SettingsConsole({ initialData }: { initialData: DashboardData })
           title="Jev assessments"
           helper="Use Jev once for incoming classification and again when a technician completes the ticket."
         >
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          <div className="grid gap-3 xl:grid-cols-2">
             <StatusRow
               label="Connection"
               value={jevStatus?.configured ? "Configured" : "Key missing"}
@@ -2266,14 +2535,16 @@ export function SettingsConsole({ initialData }: { initialData: DashboardData })
             <StatusRow
               label="Procedures"
               value={
-                jevStatus?.procedureVersion ??
-                "company-ticket-completion-v1"
+                jevStatus?.procedureVersion ?? "company-ticket-completion-v1"
               }
               good={Boolean(jevStatus?.customProceduresConfigured)}
             />
           </div>
-          <p className="mt-3 text-pretty text-sm leading-6 text-[#737064]">
-            Store <code className="font-mono text-[12px] text-[#24324a]">TYPESAFE_API_KEY</code>{" "}
+          <p className="mt-3 text-pretty text-sm leading-6 text-ink-muted">
+            Store{" "}
+            <code className="font-mono text-[12px] text-ink">
+              TYPESAFE_API_KEY
+            </code>{" "}
             on the server. Low-confidence intake stays in human triage. Missing
             completion evidence is excluded from quality scores and shown as a
             separate follow-up count. Common secrets and personal identifiers
@@ -2281,8 +2552,12 @@ export function SettingsConsole({ initialData }: { initialData: DashboardData })
           </p>
         </SetupCard>
 
-        <SetupCard icon={<Settings className="h-5 w-5" />} title="RepairShopr mirror" helper="Pull tickets and customers from RepairShopr into this triage console.">
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <SetupCard
+          icon={<Settings className="h-5 w-5" />}
+          title="RepairShopr mirror"
+          helper="Pull tickets and customers from RepairShopr into this triage console."
+        >
+          <div className="grid gap-3 xl:grid-cols-2">
             <StatusRow
               label="Connection"
               value={
@@ -2328,17 +2603,17 @@ export function SettingsConsole({ initialData }: { initialData: DashboardData })
               good={repairShoprConfig.cronSecretPresent === true}
             />
           </div>
-          <div className="mt-3 rounded-2xl bg-[#fbfaf7] px-3 py-3 text-sm leading-6 text-[#5f625d] ring-1 ring-[#e7dfd2]">
+          <div className="mt-3 rounded-lg bg-surface-muted px-3 py-3 text-sm leading-6 text-ink-muted ring-1 ring-border">
             <p>
               Subdomain:{" "}
-              <span className="font-bold text-[#1f2937]">
+              <span className="font-semibold text-ink">
                 {repairShoprConfig.subdomain ??
                   "Enter the sync secret and refresh to check"}
               </span>
             </p>
             <p>
               Last sync:{" "}
-              <span className="font-bold text-[#1f2937]">
+              <span className="font-semibold text-ink">
                 {repairShoprStatus.lastSyncAt
                   ? formatDateTime(repairShoprStatus.lastSyncAt)
                   : "Never"}
@@ -2359,25 +2634,46 @@ export function SettingsConsole({ initialData }: { initialData: DashboardData })
               placeholder="For manual sync"
             />
             <div className="flex items-end">
-              <button type="button" onClick={() => runMutation(refreshRepairShoprStatus)} disabled={isPending || !repairShoprSyncSecret.trim()} className="btn-soft inline-flex h-11 w-full items-center justify-center gap-2 rounded-full px-4 text-sm font-bold disabled:opacity-60">
-                <RotateCcw className={`h-4 w-4 ${isPending ? "animate-spin" : ""}`} />
+              <button
+                type="button"
+                onClick={() => runMutation(refreshRepairShoprStatus)}
+                disabled={isPending || !repairShoprSyncSecret.trim()}
+                className="btn-soft inline-flex h-11 w-full items-center justify-center gap-2 rounded-full px-4 text-sm font-semibold disabled:opacity-60"
+              >
+                <RotateCcw
+                  className={`h-4 w-4 ${isPending ? "animate-spin" : ""}`}
+                />
                 Refresh
               </button>
             </div>
             <div className="flex items-end">
-              <button type="button" onClick={() => runMutation(testRepairShoprConnection)} disabled={isPending || !repairShoprStatus.configured || !repairShoprSyncSecret.trim()} className="btn-soft inline-flex h-11 w-full items-center justify-center gap-2 rounded-full px-4 text-sm font-bold disabled:opacity-60">
+              <button
+                type="button"
+                onClick={() => runMutation(testRepairShoprConnection)}
+                disabled={
+                  isPending ||
+                  !repairShoprStatus.configured ||
+                  !repairShoprSyncSecret.trim()
+                }
+                className="btn-soft inline-flex h-11 w-full items-center justify-center gap-2 rounded-full px-4 text-sm font-semibold disabled:opacity-60"
+              >
                 <ShieldCheck className="h-4 w-4" />
                 Test
               </button>
             </div>
             <div className="flex items-end">
-              <button type="button" onClick={() => runMutation(syncRepairShoprNow)} disabled={isPending || !repairShoprSyncSecret.trim()} className="btn-primary inline-flex h-11 w-full items-center justify-center gap-2 rounded-full px-4 text-sm font-bold disabled:opacity-60">
+              <button
+                type="button"
+                onClick={() => runMutation(syncRepairShoprNow)}
+                disabled={isPending || !repairShoprSyncSecret.trim()}
+                className="btn-primary inline-flex h-11 w-full items-center justify-center gap-2 rounded-full px-4 text-sm font-semibold disabled:opacity-60"
+              >
                 <RadioTower className="h-4 w-4" />
                 Sync now
               </button>
             </div>
           </div>
-          <p className="mt-3 text-sm leading-6 text-[#737064]">
+          <p className="mt-3 text-sm leading-6 text-ink-muted">
             Set REPAIRSHOPR_SUBDOMAIN, REPAIRSHOPR_API_KEY,
             REPAIRSHOPR_SYNC_SECRET, and CRON_SECRET in Vercel. The five-minute
             cron schedule requires a Vercel Pro plan; manual sync uses the sync
@@ -2385,36 +2681,87 @@ export function SettingsConsole({ initialData }: { initialData: DashboardData })
           </p>
         </SetupCard>
 
-        <SetupCard icon={<RadioTower className="h-5 w-5" />} title="Send a test request" helper="Post a synthetic alert with an optional webhook secret or API key.">
-          <form onSubmit={submitIntegrationTest} className="grid gap-3 sm:grid-cols-2">
+        <SetupCard
+          icon={<RadioTower className="h-5 w-5" />}
+          title="Send a test request"
+          helper="Post a synthetic alert with an optional webhook secret or API key."
+        >
+          <form
+            onSubmit={submitIntegrationTest}
+            className="grid gap-3 sm:grid-cols-2"
+          >
             <div className="sm:col-span-2">
-              <TextField labelText="Webhook URL" value={integrationTest.webhookUrl} onChange={(value) => setIntegrationTest((next) => ({ ...next, webhookUrl: value }))} placeholder="/api/webhooks/inbound-email" />
+              <TextField
+                labelText="Webhook URL"
+                value={integrationTest.webhookUrl}
+                onChange={(value) =>
+                  setIntegrationTest((next) => ({ ...next, webhookUrl: value }))
+                }
+                placeholder="/api/webhooks/inbound-email"
+              />
             </div>
-            <TextField labelText="Webhook secret or API key" type="password" value={integrationTest.apiKey} onChange={(value) => setIntegrationTest((next) => ({ ...next, apiKey: value }))} placeholder="Optional" />
-            <TextField labelText="Subject" value={integrationTest.subject} onChange={(value) => setIntegrationTest((next) => ({ ...next, subject: value }))} placeholder="Integration smoke alert" />
-            <button type="submit" disabled={isPending} className="btn-primary inline-flex h-11 items-center justify-center gap-2 rounded-full px-4 text-sm font-bold disabled:opacity-60 sm:col-span-2">
+            <TextField
+              labelText="Webhook secret or API key"
+              type="password"
+              value={integrationTest.apiKey}
+              onChange={(value) =>
+                setIntegrationTest((next) => ({ ...next, apiKey: value }))
+              }
+              placeholder="Optional"
+            />
+            <TextField
+              labelText="Subject"
+              value={integrationTest.subject}
+              onChange={(value) =>
+                setIntegrationTest((next) => ({ ...next, subject: value }))
+              }
+              placeholder="Integration smoke alert"
+            />
+            <button
+              type="submit"
+              disabled={isPending}
+              className="btn-primary inline-flex h-11 items-center justify-center gap-2 rounded-full px-4 text-sm font-semibold disabled:opacity-60 sm:col-span-2"
+            >
               <Send className="h-4 w-4" />
               Send test request
             </button>
           </form>
         </SetupCard>
 
-        <SetupCard icon={<Users className="h-5 w-5" />} title="Teams and people" helper="Route alerts to the right team and on-call owner.">
+        <SetupCard
+          icon={<Users className="h-5 w-5" />}
+          title="Teams and people"
+          helper="Route alerts to the right team and on-call owner."
+        >
           <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
             <div className="grid gap-3">
               <form onSubmit={submitTeam} className="grid gap-3">
-                <TextField labelText="Team name" value={teamDraft.name} onChange={(value) => setTeamDraft({ name: value })} placeholder="Billing" />
-                <button type="submit" disabled={isPending || !teamDraft.name.trim()} className="btn-soft inline-flex h-11 items-center justify-center gap-2 rounded-full px-4 text-sm font-bold disabled:opacity-60">
+                <TextField
+                  labelText="Team name"
+                  value={teamDraft.name}
+                  onChange={(value) => setTeamDraft({ name: value })}
+                  placeholder="Billing"
+                />
+                <button
+                  type="submit"
+                  disabled={isPending || !teamDraft.name.trim()}
+                  className="btn-soft inline-flex h-11 items-center justify-center gap-2 rounded-full px-4 text-sm font-semibold disabled:opacity-60"
+                >
                   <UserPlus className="h-4 w-4" />
                   Add team
                 </button>
               </form>
               <div className="grid gap-2">
                 {directoryData.teams.map((team) => (
-                  <div key={team.id} className="rounded-2xl border border-[#e7dfd2] bg-[#fbfaf7] px-3 py-3">
+                  <div
+                    key={team.id}
+                    className="rounded-lg border border-border bg-surface-muted px-3 py-3"
+                  >
                     <div className="flex items-center justify-between gap-3">
-                      <p className="text-sm font-bold text-[#1f2937]">{team.name}</p>
-                      <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-bold text-[#737064] ring-1 ring-[#e7dfd2]">
+                      <p className="text-sm font-semibold text-ink">
+                        {team.name}
+                      </p>
+                      <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-ink-muted ring-1 ring-border">
                         {team.onCall}/{team.members} on call
                       </span>
                     </div>
@@ -2425,52 +2772,114 @@ export function SettingsConsole({ initialData }: { initialData: DashboardData })
 
             <form onSubmit={submitUser} className="grid gap-3">
               <div className="grid gap-3 sm:grid-cols-2">
-                <TextField labelText="Email" type="email" value={userDraft.email} onChange={(value) => setUserDraft((next) => ({ ...next, email: value }))} placeholder="teammate@decent4.com" />
-                <TextField labelText="Name" value={userDraft.fullName} onChange={(value) => setUserDraft((next) => ({ ...next, fullName: value }))} placeholder="Teammate name" />
-                <SelectField labelText="Role" value={userDraft.role} onChange={(value) => setUserDraft((next) => ({ ...next, role: value as UserRole }))}>
+                <TextField
+                  labelText="Email"
+                  type="email"
+                  value={userDraft.email}
+                  onChange={(value) =>
+                    setUserDraft((next) => ({ ...next, email: value }))
+                  }
+                  placeholder="teammate@decent4.com"
+                />
+                <TextField
+                  labelText="Name"
+                  value={userDraft.fullName}
+                  onChange={(value) =>
+                    setUserDraft((next) => ({ ...next, fullName: value }))
+                  }
+                  placeholder="Teammate name"
+                />
+                <SelectField
+                  labelText="Role"
+                  value={userDraft.role}
+                  onChange={(value) =>
+                    setUserDraft((next) => ({
+                      ...next,
+                      role: value as UserRole,
+                    }))
+                  }
+                >
                   {roles.map((role) => (
-                    <option key={role} value={role}>{label(role)}</option>
+                    <option key={role} value={role}>
+                      {label(role)}
+                    </option>
                   ))}
                 </SelectField>
-                <SelectField labelText="Team" value={userDraft.teamId} onChange={(value) => setUserDraft((next) => ({ ...next, teamId: value }))}>
+                <SelectField
+                  labelText="Team"
+                  value={userDraft.teamId}
+                  onChange={(value) =>
+                    setUserDraft((next) => ({ ...next, teamId: value }))
+                  }
+                >
                   <option value="">No team</option>
                   {directoryData.teams.map((team) => (
-                    <option key={team.id} value={team.id}>{team.name}</option>
+                    <option key={team.id} value={team.id}>
+                      {team.name}
+                    </option>
                   ))}
                 </SelectField>
               </div>
-              <label className="flex items-center gap-2 rounded-2xl border border-[#e7dfd2] bg-[#fbfaf7] px-3 py-3 text-sm font-bold text-[#1f2937]">
+              <label className="flex items-center gap-2 rounded-lg border border-border bg-surface-muted px-3 py-3 text-sm font-semibold text-ink">
                 <input
                   type="checkbox"
                   checked={userDraft.isOnCall}
-                  onChange={(event) => setUserDraft((next) => ({ ...next, isOnCall: event.target.checked }))}
-                  className="h-4 w-4 accent-[#1f6f61]"
+                  onChange={(event) =>
+                    setUserDraft((next) => ({
+                      ...next,
+                      isOnCall: event.target.checked,
+                    }))
+                  }
+                  className="h-4 w-4 accent-blue-600"
                 />
                 On call
               </label>
-              <button type="submit" disabled={isPending || !userDraft.email.trim()} className="btn-primary inline-flex h-11 items-center justify-center gap-2 rounded-full px-4 text-sm font-bold disabled:opacity-60">
+              <button
+                type="submit"
+                disabled={isPending || !userDraft.email.trim()}
+                className="btn-primary inline-flex h-11 items-center justify-center gap-2 rounded-full px-4 text-sm font-semibold disabled:opacity-60"
+              >
                 <UserPlus className="h-4 w-4" />
                 Add user
               </button>
               <div className="grid gap-2">
                 {directoryData.users.map((user) => {
                   const teamNames = user.teamIds
-                    .map((teamId) => directoryData.teams.find((team) => team.id === teamId)?.name)
+                    .map(
+                      (teamId) =>
+                        directoryData.teams.find((team) => team.id === teamId)
+                          ?.name,
+                    )
                     .filter(Boolean)
                     .join(", ");
                   return (
-                    <div key={user.id} className="rounded-2xl border border-[#e7dfd2] bg-white px-3 py-3">
+                    <div
+                      key={user.id}
+                      className="rounded-lg border border-border bg-white px-3 py-3"
+                    >
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <div>
-                          <p className="text-sm font-bold text-[#1f2937]">{user.fullName ?? user.email}</p>
-                          <p className="mt-0.5 text-[12px] font-medium text-[#737064]">{user.email}</p>
+                          <p className="text-sm font-semibold text-ink">
+                            {user.fullName ?? user.email}
+                          </p>
+                          <p className="mt-0.5 text-[12px] font-medium text-ink-muted">
+                            {user.email}
+                          </p>
                         </div>
                         <div className="flex flex-wrap gap-1.5">
-                          <span className="rounded-full bg-[#f7f5f0] px-2.5 py-1 text-[11px] font-bold text-[#737064] ring-1 ring-[#e7dfd2]">{label(user.role)}</span>
-                          {user.onCall ? <span className="rounded-full bg-[#e8f7f3] px-2.5 py-1 text-[11px] font-bold text-[#1f6f61] ring-1 ring-[#c7eee4]">On call</span> : null}
+                          <span className="rounded-full bg-background px-2.5 py-1 text-[11px] font-semibold text-ink-muted ring-1 ring-border">
+                            {label(user.role)}
+                          </span>
+                          {user.onCall ? (
+                            <span className="rounded-full bg-accent-soft px-2.5 py-1 text-[11px] font-semibold text-accent ring-1 ring-blue-100">
+                              On call
+                            </span>
+                          ) : null}
                         </div>
                       </div>
-                      <p className="mt-2 text-[12px] font-semibold text-[#737064]">{teamNames || "No team"}</p>
+                      <p className="mt-2 text-[12px] font-semibold text-ink-muted">
+                        {teamNames || "No team"}
+                      </p>
                     </div>
                   );
                 })}
@@ -2479,21 +2888,40 @@ export function SettingsConsole({ initialData }: { initialData: DashboardData })
           </div>
         </SetupCard>
 
-        <SetupCard icon={<AlertTriangle className="h-5 w-5" />} title="Example messages" helper="Use a sample payload when checking a provider sandbox.">
+        <SetupCard
+          icon={<AlertTriangle className="h-5 w-5" />}
+          title="Example messages"
+          helper="Use a sample payload when checking a provider sandbox."
+        >
           <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
-            <SelectField labelText="Provider" value={exampleId} onChange={setExampleId}>
+            <SelectField
+              labelText="Provider"
+              value={exampleId}
+              onChange={setExampleId}
+            >
               {exampleProviders.map((provider) => (
-                <option key={provider.id} value={provider.id}>{provider.label}</option>
+                <option key={provider.id} value={provider.id}>
+                  {provider.label}
+                </option>
               ))}
             </SelectField>
             <div className="flex items-end">
-              <button type="button" onClick={() => void copyText(JSON.stringify(example.payload, null, 2), `${example.label} payload`)} className="btn-soft inline-flex h-11 w-full items-center justify-center gap-2 rounded-full px-4 text-sm font-bold">
+              <button
+                type="button"
+                onClick={() =>
+                  void copyText(
+                    JSON.stringify(example.payload, null, 2),
+                    `${example.label} payload`,
+                  )
+                }
+                className="btn-soft inline-flex h-11 w-full items-center justify-center gap-2 rounded-full px-4 text-sm font-semibold"
+              >
                 <Send className="h-4 w-4" />
                 Copy payload
               </button>
             </div>
           </div>
-          <pre className="mt-3 max-h-72 overflow-auto rounded-2xl bg-[#fbfaf7] px-3 py-3 font-mono text-[12px] leading-5 text-[#1f2937] ring-1 ring-[#e7dfd2]">
+          <pre className="mt-3 max-h-72 overflow-auto rounded-lg bg-surface-muted px-3 py-3 font-mono text-[12px] leading-5 text-ink ring-1 ring-border">
             {JSON.stringify(example.payload, null, 2)}
           </pre>
         </SetupCard>
@@ -2515,17 +2943,17 @@ function SetupCard({
   children: ReactNode;
 }) {
   return (
-    <article className="rounded-[28px] border border-[#e7dfd2] bg-white p-5 shadow-sm sm:p-6">
-      <div className="mb-4 flex items-start gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-[#e8f7f3] text-[#1f6f61] ring-1 ring-[#c7eee4]">
+    <article className="setup-card">
+      <div className="setup-card-heading">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-accent-soft text-accent ring-1 ring-blue-100">
           {icon}
         </div>
         <div>
-          <h2 className="text-lg font-bold text-[#1f2937]">{title}</h2>
-          <p className="mt-1 text-sm leading-5 text-[#737064]">{helper}</p>
+          <h2 className="text-lg font-semibold text-ink">{title}</h2>
+          <p className="mt-1 text-sm leading-5 text-ink-muted">{helper}</p>
         </div>
       </div>
-      {children}
+      <div className="setup-card-body">{children}</div>
     </article>
   );
 }

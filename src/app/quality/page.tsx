@@ -33,10 +33,10 @@ export default async function QualityPage() {
       title="Work quality, with evidence"
       subtitle={`Manager view / last ${data.windowDays} days`}
     >
-      <section className="mx-auto grid max-w-[1180px] gap-5 px-4 py-5 sm:px-6">
+      <section className="page-content grid gap-6">
         <ManagerQualityConsole cohorts={cohorts} />
         {data.dbError ? (
-          <p className="rounded-2xl bg-amber-50 px-4 py-3 text-pretty text-sm text-amber-900 ring-1 ring-amber-200">
+          <p className="rounded-lg bg-amber-50 px-4 py-3 text-pretty text-sm text-amber-900 ring-1 ring-amber-200">
             Live quality data is unavailable. No employee metrics are shown
             until the database query succeeds. {data.dbError}
           </p>

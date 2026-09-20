@@ -48,20 +48,20 @@ function formatRate(value: number | null) {
 
 function CohortCard({ cohort }: { cohort: ManagerQualityCohort }) {
   return (
-    <article className="rounded-[22px] border border-[#e7dfd2] bg-[#fbfaf7] p-4 lg:hidden">
+    <article className="rounded-lg border border-border bg-surface-muted p-4 lg:hidden">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h3 className="text-balance text-sm font-bold text-[#1f2937]">
+          <h3 className="text-balance text-sm font-semibold text-ink">
             {cohort.technician}
           </h3>
-          <p className="mt-0.5 text-[12px] text-[#737064]">
+          <p className="mt-0.5 text-[12px] text-ink-muted">
             {cohort.role} / {cohort.issueType}
           </p>
-          <p className="mt-1 max-w-[18rem] truncate font-mono text-[10px] text-[#8a877e]">
+          <p className="mt-1 max-w-[18rem] truncate font-mono text-[10px] text-ink-muted">
             {cohort.reviewBasis}
           </p>
         </div>
-        <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-bold tabular-nums text-[#24324a] ring-1 ring-[#e7dfd2]">
+        <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold tabular-nums text-ink ring-1 ring-border">
           n={cohort.sampleSize}
         </span>
       </div>
@@ -72,9 +72,16 @@ function CohortCard({ cohort }: { cohort: ManagerQualityCohort }) {
           value={`${formatMinutes(cohort.medianResponseMinutes)} / ${formatMinutes(cohort.averageResponseMinutes)}`}
         />
         <Metric label="Reopened" value={formatRate(cohort.reopenedRate)} />
-        <Metric label="Scored quality" value={formatPercent(cohort.qualityScore)} />
+        <Metric
+          label="Scored quality"
+          value={formatPercent(cohort.qualityScore)}
+        />
         <Metric label="Scored criteria" value={String(cohort.scoredCriteria)} />
-        <Metric label="Missing evidence" value={String(cohort.missingEvidence)} warning />
+        <Metric
+          label="Missing evidence"
+          value={String(cohort.missingEvidence)}
+          warning
+        />
       </dl>
     </article>
   );
@@ -90,11 +97,17 @@ function Metric({
   warning?: boolean;
 }) {
   return (
-    <div className={`rounded-2xl bg-white px-3 py-2.5 ring-1 ${warning ? "ring-amber-200" : "ring-[#e7dfd2]"}`}>
-      <dt className={`text-[10px] font-bold uppercase tracking-[0.07em] ${warning ? "text-amber-800" : "text-[#737064]"}`}>
+    <div
+      className={`rounded-lg bg-white px-3 py-2.5 ring-1 ${warning ? "ring-amber-200" : "ring-border"}`}
+    >
+      <dt
+        className={`text-[10px] font-semibold uppercase tracking-[0.07em] ${warning ? "text-amber-800" : "text-ink-muted"}`}
+      >
         {label}
       </dt>
-      <dd className={`mt-1 font-bold tabular-nums ${warning ? "text-amber-900" : "text-[#24324a]"}`}>
+      <dd
+        className={`mt-1 font-semibold tabular-nums ${warning ? "text-amber-900" : "text-ink"}`}
+      >
         {value}
       </dd>
     </div>
@@ -136,56 +149,57 @@ export function ManagerQualityConsole({
   return (
     <section
       aria-labelledby="manager-quality-console-title"
-      className={`rounded-[28px] border border-[#e7dfd2] bg-white p-5 shadow-sm sm:p-6 ${className}`}
+      className={`rounded-xl border border-border bg-white p-5 shadow-sm sm:p-6 ${className}`}
     >
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2 text-[#1f6f61]">
+          <div className="flex items-center gap-2 text-accent">
             <UsersRound aria-hidden="true" className="h-4 w-4" />
-            <span className="text-[12px] font-bold uppercase tracking-[0.1em]">
+            <span className="text-[12px] font-semibold uppercase tracking-[0.1em]">
               Manager dashboard
             </span>
           </div>
           <h2
             id="manager-quality-console-title"
-            className="mt-2 text-balance text-xl font-bold tracking-tight text-[#1f2937]"
+            className="mt-2 text-balance text-xl font-semibold tracking-tight text-ink"
           >
             {title}
           </h2>
-          <p className="mt-1 max-w-2xl text-pretty text-sm leading-6 text-[#737064]">
+          <p className="mt-1 max-w-2xl text-pretty text-sm leading-6 text-ink-muted">
             {description}
           </p>
         </div>
-        <span className="inline-flex items-center gap-1.5 rounded-full bg-[#e8f7f3] px-3 py-1.5 text-[12px] font-bold text-[#1f6f61] ring-1 ring-[#c7eee4]">
+        <span className="inline-flex items-center gap-1.5 rounded-full bg-accent-soft px-3 py-1.5 text-[12px] font-semibold text-accent ring-1 ring-blue-100">
           <UserRoundCheck aria-hidden="true" className="h-3.5 w-3.5" />
-          {cohorts.length} comparable {cohorts.length === 1 ? "cohort" : "cohorts"}
+          {cohorts.length} comparable{" "}
+          {cohorts.length === 1 ? "cohort" : "cohorts"}
         </span>
       </div>
 
       <dl className="mt-5 grid gap-3 sm:grid-cols-3">
-        <div className="rounded-[20px] bg-[#f7f5f0] p-4 ring-1 ring-[#e7dfd2]">
-          <dt className="text-[11px] font-bold uppercase tracking-[0.09em] text-[#737064]">
+        <div className="rounded-lg bg-background p-4 ring-1 ring-border">
+          <dt className="text-[11px] font-semibold uppercase tracking-[0.09em] text-ink-muted">
             Tickets handled
           </dt>
-          <dd className="mt-1 text-2xl font-bold tabular-nums text-[#24324a]">
+          <dd className="mt-1 text-2xl font-semibold tabular-nums text-ink">
             {totalHandled}
           </dd>
         </div>
-        <div className="rounded-[20px] bg-[#f7f5f0] p-4 ring-1 ring-[#e7dfd2]">
-          <dt className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.09em] text-[#737064]">
+        <div className="rounded-lg bg-background p-4 ring-1 ring-border">
+          <dt className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.09em] text-ink-muted">
             <Calculator aria-hidden="true" className="h-3.5 w-3.5" />
             Scored criteria
           </dt>
-          <dd className="mt-1 text-2xl font-bold tabular-nums text-[#24324a]">
+          <dd className="mt-1 text-2xl font-semibold tabular-nums text-ink">
             {totalScored}
           </dd>
         </div>
-        <div className="rounded-[20px] bg-amber-50/70 p-4 ring-1 ring-amber-200">
-          <dt className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.09em] text-amber-800">
+        <div className="rounded-lg bg-amber-50/70 p-4 ring-1 ring-amber-200">
+          <dt className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.09em] text-amber-800">
             <CircleAlert aria-hidden="true" className="h-3.5 w-3.5" />
             Missing evidence
           </dt>
-          <dd className="mt-1 text-2xl font-bold tabular-nums text-amber-900">
+          <dd className="mt-1 text-2xl font-semibold tabular-nums text-amber-900">
             {totalMissingEvidence}
           </dd>
         </div>
@@ -197,37 +211,57 @@ export function ManagerQualityConsole({
         ))}
       </div>
 
-      <div className="mt-4 hidden overflow-hidden rounded-[22px] border border-[#e7dfd2] lg:block">
+      <div className="mt-4 hidden overflow-hidden rounded-lg border border-border lg:block">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[980px] border-collapse text-left text-[13px]">
             <caption className="sr-only">
               Quality and workload metrics grouped by technician role and ticket
               issue type
             </caption>
-            <thead className="bg-[#f7f5f0] text-[10px] font-bold uppercase tracking-[0.08em] text-[#737064]">
+            <thead className="bg-background text-[10px] font-semibold uppercase tracking-[0.08em] text-ink-muted">
               <tr>
-                <th scope="col" className="px-4 py-3">Technician</th>
-                <th scope="col" className="px-4 py-3">Role</th>
-                <th scope="col" className="px-4 py-3">Issue type</th>
-                <th scope="col" className="px-4 py-3 text-right">Handled</th>
-                <th scope="col" className="px-4 py-3 text-right">Median response</th>
-                <th scope="col" className="px-4 py-3 text-right">Average response</th>
-                <th scope="col" className="px-4 py-3 text-right">Reopened</th>
-                <th scope="col" className="px-4 py-3 text-right">Scored quality</th>
-                <th scope="col" className="px-4 py-3 text-right">Missing evidence</th>
-                <th scope="col" className="px-4 py-3 text-right">Sample</th>
+                <th scope="col" className="px-4 py-3">
+                  Technician
+                </th>
+                <th scope="col" className="px-4 py-3">
+                  Role
+                </th>
+                <th scope="col" className="px-4 py-3">
+                  Issue type
+                </th>
+                <th scope="col" className="px-4 py-3 text-right">
+                  Handled
+                </th>
+                <th scope="col" className="px-4 py-3 text-right">
+                  Median response
+                </th>
+                <th scope="col" className="px-4 py-3 text-right">
+                  Average response
+                </th>
+                <th scope="col" className="px-4 py-3 text-right">
+                  Reopened
+                </th>
+                <th scope="col" className="px-4 py-3 text-right">
+                  Scored quality
+                </th>
+                <th scope="col" className="px-4 py-3 text-right">
+                  Missing evidence
+                </th>
+                <th scope="col" className="px-4 py-3 text-right">
+                  Sample
+                </th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[#e7dfd2] bg-white text-[#24324a]">
+            <tbody className="divide-y divide-border bg-white text-ink">
               {sortedCohorts.map((cohort) => (
                 <tr key={cohort.id}>
-                  <th scope="row" className="px-4 py-3 font-bold text-[#1f2937]">
+                  <th scope="row" className="px-4 py-3 font-semibold text-ink">
                     {cohort.technician}
                   </th>
-                  <td className="px-4 py-3 text-[#5f625d]">{cohort.role}</td>
-                  <td className="px-4 py-3 text-[#5f625d]">
+                  <td className="px-4 py-3 text-ink-muted">{cohort.role}</td>
+                  <td className="px-4 py-3 text-ink-muted">
                     <div>{cohort.issueType}</div>
-                    <div className="mt-0.5 max-w-56 truncate font-mono text-[10px] text-[#8a877e]">
+                    <div className="mt-0.5 max-w-56 truncate font-mono text-[10px] text-ink-muted">
                       {cohort.reviewBasis}
                     </div>
                   </td>
@@ -244,15 +278,15 @@ export function ManagerQualityConsole({
                     {formatRate(cohort.reopenedRate)}
                   </td>
                   <td className="px-4 py-3 text-right">
-                    <div className="font-bold tabular-nums">
+                    <div className="font-semibold tabular-nums">
                       {formatPercent(cohort.qualityScore)}
                     </div>
-                    <div className="mt-0.5 text-[10px] text-[#737064]">
+                    <div className="mt-0.5 text-[10px] text-ink-muted">
                       {cohort.scoredCriteria} scored
                     </div>
                   </td>
                   <td className="px-4 py-3 text-right">
-                    <span className="inline-flex min-w-8 justify-center rounded-full bg-amber-50 px-2 py-1 font-bold tabular-nums text-amber-800 ring-1 ring-amber-200">
+                    <span className="inline-flex min-w-8 justify-center rounded-full bg-amber-50 px-2 py-1 font-semibold tabular-nums text-amber-800 ring-1 ring-amber-200">
                       {cohort.missingEvidence}
                     </span>
                   </td>
@@ -263,7 +297,10 @@ export function ManagerQualityConsole({
               ))}
               {!sortedCohorts.length ? (
                 <tr>
-                  <td colSpan={10} className="px-4 py-10 text-center text-sm text-[#737064]">
+                  <td
+                    colSpan={10}
+                    className="px-4 py-10 text-center text-sm text-ink-muted"
+                  >
                     No comparable cohorts are available yet.
                   </td>
                 </tr>
@@ -274,12 +311,12 @@ export function ManagerQualityConsole({
       </div>
 
       {!sortedCohorts.length ? (
-        <div className="mt-4 rounded-[20px] border border-dashed border-[#d8cfc1] bg-[#fbfaf7] p-6 text-center text-sm text-[#737064] lg:hidden">
+        <div className="mt-4 rounded-lg border border-dashed border-border bg-surface-muted p-6 text-center text-sm text-ink-muted lg:hidden">
           No comparable cohorts are available yet.
         </div>
       ) : null}
 
-      <p className="mt-4 flex items-start gap-2 rounded-2xl bg-[#e8f7f3]/70 px-3 py-3 text-pretty text-[12px] leading-5 text-[#315e56] ring-1 ring-[#c7eee4]">
+      <p className="mt-4 flex items-start gap-2 rounded-lg bg-accent-soft/70 px-3 py-3 text-pretty text-[12px] leading-5 text-blue-900 ring-1 ring-blue-100">
         <ShieldCheck aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />
         Jev assesses ticket artifacts. Your software calculates these metrics.
         Managers review examples and make employee decisions—never Jev.

@@ -3,6 +3,7 @@
 import { CheckCircle2, X } from "lucide-react";
 import { useState } from "react";
 import type { FormEvent } from "react";
+import { useDialogFocus } from "@/components/use-dialog-focus";
 
 export type CompletionEvidence = {
   resolutionSummary: string;
@@ -25,6 +26,7 @@ export function CompleteTicketDialog({
   onCancel: () => void;
   onSubmit: (evidence: CompletionEvidence) => void;
 }) {
+  const dialogRef = useDialogFocus(open, onCancel, pending);
   const [evidence, setEvidence] = useState<CompletionEvidence>({
     resolutionSummary: "",
     customerNextSteps: "",
@@ -50,24 +52,26 @@ export function CompleteTicketDialog({
         if (event.currentTarget === event.target && !pending) cancel();
       }}
     >
-      <section
+      <div
+        ref={dialogRef}
+        tabIndex={-1}
         role="dialog"
         aria-modal="true"
         aria-labelledby="complete-ticket-title"
-        className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-[28px] bg-white p-5 shadow-2xl ring-1 ring-[#d6cbbb] sm:p-6"
+        className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-white p-5 shadow-2xl ring-1 ring-border sm:p-6"
       >
         <div className="flex items-start justify-between gap-4">
           <div>
-            <p className="text-[12px] font-bold uppercase tracking-[0.1em] text-[#1f6f61]">
+            <p className="text-[12px] font-semibold uppercase tracking-[0.1em] text-accent">
               Completion evidence
             </p>
             <h2
               id="complete-ticket-title"
-              className="mt-2 text-balance text-xl font-bold text-[#1f2937]"
+              className="mt-2 text-balance text-xl font-semibold text-ink"
             >
               Mark “{ticketTitle}” {completionStatus}
             </h2>
-            <p className="mt-1 text-pretty text-sm leading-6 text-[#737064]">
+            <p className="mt-1 text-pretty text-sm leading-6 text-ink-muted">
               Jev reviews the recorded work against your procedure. Empty fields
               are flagged as missing evidence and excluded from quality scoring.
             </p>
@@ -84,7 +88,7 @@ export function CompleteTicketDialog({
         </div>
 
         <form onSubmit={submit} className="mt-5 grid gap-4">
-          <label className="grid gap-1.5 text-sm font-bold text-[#1f2937]">
+          <label className="grid gap-1.5 text-sm font-semibold text-ink">
             Work completed
             <textarea
               value={evidence.resolutionSummary}
@@ -100,7 +104,7 @@ export function CompleteTicketDialog({
               className="input-field resize-none px-3 py-2.5 text-sm font-normal placeholder:text-slate-400"
             />
           </label>
-          <label className="grid gap-1.5 text-sm font-bold text-[#1f2937]">
+          <label className="grid gap-1.5 text-sm font-semibold text-ink">
             Customer next steps
             <textarea
               value={evidence.customerNextSteps}
@@ -116,7 +120,7 @@ export function CompleteTicketDialog({
               className="input-field resize-none px-3 py-2.5 text-sm font-normal placeholder:text-slate-400"
             />
           </label>
-          <label className="grid gap-1.5 text-sm font-bold text-[#1f2937]">
+          <label className="grid gap-1.5 text-sm font-semibold text-ink">
             Verification performed
             <textarea
               value={evidence.verificationEvidence}
@@ -137,21 +141,21 @@ export function CompleteTicketDialog({
               type="button"
               onClick={cancel}
               disabled={pending}
-              className="btn-soft h-11 rounded-full px-5 text-sm font-bold disabled:opacity-60"
+              className="btn-soft h-11 rounded-full px-5 text-sm font-semibold disabled:opacity-60"
             >
               Keep working
             </button>
             <button
               type="submit"
               disabled={pending}
-              className="btn-success inline-flex h-11 items-center justify-center gap-2 rounded-full px-5 text-sm font-bold disabled:opacity-60"
+              className="btn-success inline-flex h-11 items-center justify-center gap-2 rounded-full px-5 text-sm font-semibold disabled:opacity-60"
             >
               <CheckCircle2 className="h-4 w-4" />
               {pending ? "Completing…" : "Complete and review"}
             </button>
           </div>
         </form>
-      </section>
+      </div>
     </div>
   );
 }

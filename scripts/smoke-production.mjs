@@ -7,7 +7,7 @@ const base='https://kyl3kan3.vercel.app';
 const keys=JSON.parse(await readFile(path.join(homedir(),'.codex/private/kyl3kan3-production.json'),'utf8'));
 const landing=await fetch(base,{redirect:'manual'});
 assert.equal(landing.status,307);
-assert.equal(new URL(landing.headers.get('location')).pathname,'/login');
+assert.equal(new URL(landing.headers.get('location'),base).pathname,'/login');
 const loginPage=await fetch(base+'/login');
 assert.equal(loginPage.status,200);
 assert.ok((await loginPage.text()).includes('Sign in to your workspace'));

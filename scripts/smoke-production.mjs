@@ -13,7 +13,8 @@ assert.equal(loginPage.status,200);
 assert.ok((await loginPage.text()).includes('Sign in to your workspace'));
 for(const role of ['operator','manager']){
   const password=keys[role==='manager'?'MANAGER_DASHBOARD_PASSWORD':'APP_ACCESS_PASSWORD'];
-  const login=await fetch(base+'/api/auth/login',{method:'POST',redirect:'manual',headers:{origin:base},body:new URLSearchParams({username:role,password,next:'/'})});
+  const username=keys[role==='manager'?'MANAGER_DASHBOARD_USERNAME':'APP_ACCESS_USERNAME'] || role;
+  const login=await fetch(base+'/api/auth/login',{method:'POST',redirect:'manual',headers:{origin:base},body:new URLSearchParams({username,password,next:'/'})});
   assert.equal(login.status,303);
   const setCookie=login.headers.get('set-cookie');
   assert.ok(setCookie);assert.match(setCookie,/HttpOnly/);assert.match(setCookie,/Secure/);

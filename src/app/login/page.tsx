@@ -25,7 +25,7 @@ export default async function LoginPage({ searchParams }: {
         <form action="/api/auth/login" method="post" className="mt-7 space-y-5">
           <input type="hidden" name="next" value={next} />
           <label className="block text-sm font-medium">Username
-            <input name="username" autoComplete="username" required maxLength={128} defaultValue={manager ? "manager" : undefined} className="mt-2 block w-full rounded-lg border border-border px-3 py-3" />
+            <input name="username" autoComplete="username" required maxLength={128} defaultValue={manager ? (process.env.MANAGER_DASHBOARD_USERNAME?.trim() || "manager") : undefined} className="mt-2 block w-full rounded-lg border border-border px-3 py-3" />
           </label>
           <label className="block text-sm font-medium">Password
             <input name="password" type="password" autoComplete="current-password" required maxLength={512} className="mt-2 block w-full rounded-lg border border-border px-3 py-3" />

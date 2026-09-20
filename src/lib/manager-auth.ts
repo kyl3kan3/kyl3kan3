@@ -1,4 +1,5 @@
 import { timingSafeEqual } from "node:crypto";
+import { sessionRole } from "./auth-session";
 
 function configuredPassword() {
   return process.env.MANAGER_DASHBOARD_PASSWORD?.trim() ?? "";
@@ -34,6 +35,7 @@ function basicCredentials(authorization: string) {
 }
 
 export function isManagerDashboardAuthorized(request: Request) {
+  if (sessionRole(request) === "manager") return true;
   const password = configuredPassword();
   if (!password) return process.env.NODE_ENV !== "production";
 
@@ -62,12 +64,12 @@ export function managerDashboardAccessFailure() {
     status: 401,
     headers: {
       "cache-control": "no-store",
-      "www-authenticate": 'Basic realm="Manager quality dashboard", charset="UTF-8"',
     },
   });
 }
 
 export function isAppAccessAuthorized(request: Request) {
+  if (sessionRole(request)) return true;
   const password = configuredAppPassword();
   if (!password) return process.env.NODE_ENV !== "production";
 
@@ -108,7 +110,6 @@ export function appAccessFailure() {
     status: 401,
     headers: {
       "cache-control": "no-store",
-      "www-authenticate": 'Basic realm="Helpdesk workspace", charset="UTF-8"',
     },
   });
 }

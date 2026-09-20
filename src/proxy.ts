@@ -8,6 +8,18 @@ import {
 } from "@/lib/manager-auth";
 
 export function proxy(request: NextRequest) {
+  function accessFailure(manager: boolean) {
+    const failure = manager ? managerDashboardAccessFailure() : appAccessFailure();
+    if (!request.nextUrl.pathname.startsWith("/api/") && failure.status === 401) {
+      const url = new URL("/login", request.url);
+      url.searchParams.set("next", request.nextUrl.pathname + request.nextUrl.search);
+      if (manager) url.searchParams.set("manager", "1");
+      const response = NextResponse.redirect(url);
+      response.headers.set("cache-control", "no-store");
+      return response;
+    }
+    return failure;
+  }
   const managerRoute =
     request.nextUrl.pathname === "/quality" ||
     request.nextUrl.pathname.startsWith("/quality/") ||
@@ -15,10 +27,10 @@ export function proxy(request: NextRequest) {
     request.nextUrl.pathname.startsWith("/api/quality/");
   if (managerRoute) {
     if (!isManagerDashboardAuthorized(request)) {
-      return managerDashboardAccessFailure();
+      return accessFailure(true);
     }
   } else if (!isAppAccessAuthorized(request)) {
-    return appAccessFailure();
+    return accessFailure(false);
   }
   return NextResponse.next();
 }

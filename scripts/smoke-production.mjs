@@ -5,6 +5,28 @@ import assert from 'node:assert/strict';
 
 const base='https://kyl3kan3.vercel.app';
 const keys=JSON.parse(await readFile(path.join(homedir(),'.codex/private/kyl3kan3-production.json'),'utf8'));
+const landing=await fetch(base,{redirect:'manual'});
+assert.equal(landing.status,307);
+assert.equal(new URL(landing.headers.get('location')).pathname,'/login');
+const loginPage=await fetch(base+'/login');
+assert.equal(loginPage.status,200);
+assert.ok((await loginPage.text()).includes('Sign in to your workspace'));
+for(const role of ['operator','manager']){
+  const password=keys[role==='manager'?'MANAGER_DASHBOARD_PASSWORD':'APP_ACCESS_PASSWORD'];
+  const login=await fetch(base+'/api/auth/login',{method:'POST',redirect:'manual',headers:{origin:base},body:new URLSearchParams({username:role,password,next:'/'})});
+  assert.equal(login.status,303);
+  const setCookie=login.headers.get('set-cookie');
+  assert.ok(setCookie);assert.match(setCookie,/HttpOnly/);assert.match(setCookie,/Secure/);
+  const cookie=setCookie.split(';')[0];
+  const home=await fetch(base+'/',{headers:{cookie}});
+  assert.equal(home.status,200);
+  assert.ok((await home.text()).includes('Command center'));
+  assert.equal((await fetch(base+'/api/dashboard',{headers:{cookie}})).status,200);
+  assert.equal((await fetch(base+'/api/quality',{headers:{cookie}})).status,role==='manager'?200:401);
+  const logout=await fetch(base+'/api/auth/logout',{method:'POST',redirect:'manual',headers:{origin:base,cookie}});
+  assert.equal(logout.status,303);assert.match(logout.headers.get('set-cookie'),/Max-Age=0/);
+}
+console.log('Browser sign-in, workspace session, role isolation, and sign-out verified');
 async function request(route,key,method='GET'){
   const response=await fetch(base+route,{method,headers:key?{authorization:`Bearer ${keys[key]}`}:{},signal:AbortSignal.timeout(60000)});
   return response;

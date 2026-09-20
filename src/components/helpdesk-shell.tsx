@@ -102,7 +102,7 @@ export function HelpdeskShell({
         <nav aria-label="Main navigation" className="sidebar-navigation">
           {navItems.map((item) => {
             const Icon = item.icon;
-            // Document navigation allows the manager authentication challenge.
+            // Document navigation also handles manager sign-in redirects.
             const NavigationLink = item.key === "quality" ? "a" : Link;
             return (
               <div key={item.key}>
@@ -142,6 +142,9 @@ export function HelpdeskShell({
             <span>Workspace</span>
             <ChevronRight size={13} />
             <span>{subtitle}</span>
+            <form action="/api/auth/logout" method="post" className="ml-auto">
+              <button type="submit" className="px-3 text-xs text-ink-muted">Sign out</button>
+            </form>
           </div>
           <div className="workspace-toolbar">
             <h1>{title}</h1>

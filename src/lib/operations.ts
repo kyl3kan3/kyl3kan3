@@ -466,6 +466,10 @@ export async function updateTicket(ticketId: string, input: UpdateTicketInput) {
     throw new Error("Ticket not found");
   }
 
+  if (input.status && input.status !== current.status && ["repairshopr", "syncro"].includes(current.created_from)) {
+    throw new Error("Mirrored ticket status must be updated in its source system");
+  }
+
   if (input.title !== undefined) {
     if (!input.title) throw new Error("Ticket title cannot be blank");
     await sql`update tickets set title = ${input.title} where id = ${ticketId}`;
@@ -484,10 +488,6 @@ export async function updateTicket(ticketId: string, input: UpdateTicketInput) {
   let effectiveStatus = current.status;
 
   if (input.status && input.status !== current.status) {
-    if (current.created_from === "repairshopr") {
-      throw new Error("RepairShopr ticket status must be updated in RepairShopr");
-    }
-
     const wasComplete =
       current.status === "resolved" || current.status === "closed";
     const willBeComplete =

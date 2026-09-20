@@ -995,7 +995,7 @@ async function reconcileMissingCompletionAssessments(limit: number) {
         resolutionSummary:
           typeof metadata.resolutionSummary === "string"
             ? metadata.resolutionSummary
-            : row.created_from === "repairshopr"
+            : ["repairshopr", "syncro"].includes(row.created_from)
               ? row.description
               : null,
         customerNextSteps:
@@ -1007,7 +1007,7 @@ async function reconcileMissingCompletionAssessments(limit: number) {
             ? metadata.verificationEvidence
             : null,
         technicianUserId:
-          row.created_from === "repairshopr"
+          ["repairshopr", "syncro"].includes(row.created_from)
             ? null
             : Object.prototype.hasOwnProperty.call(
                   metadata,

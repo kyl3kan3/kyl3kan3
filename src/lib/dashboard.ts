@@ -1,4 +1,5 @@
 import { getSql, hasDatabaseUrl } from "./db";
+import { ensureSyncroSchema, getSyncroStatus } from "./syncro";
 import { getDemoDashboardData } from "./demo-store";
 import { getJevIntegrationStatus } from "./jev-assessments";
 import { ensureJevSchema } from "./jev-schema";
@@ -50,6 +51,8 @@ type TicketRow = {
   created_at: string;
   updated_at: string;
   created_from: string;
+  syncro_url: string | null;
+  syncro_status: string | null;
   repairshopr_url: string | null;
   repairshopr_status: string | null;
   repairshopr_customer_name: string | null;
@@ -233,6 +236,8 @@ function mapTicketRow(
     createdAt: ticket.created_at,
     updatedAt: ticket.updated_at,
     createdFrom: ticket.created_from,
+    syncroUrl: ticket.syncro_url,
+    syncroStatus: ticket.syncro_status,
     repairshoprUrl: ticket.repairshopr_url,
     repairshoprStatus: ticket.repairshopr_status,
     duplicateCount: toNumber(ticket.duplicate_count),
@@ -356,7 +361,7 @@ export async function getDashboardData(
 
   try {
     const sql = getSql();
-    await Promise.all([ensureRepairShoprSchema(), ensureJevSchema()]);
+    await Promise.all([ensureRepairShoprSchema(), ensureSyncroSchema(), ensureJevSchema()]);
 
     const [
       metricsRows,
@@ -421,7 +426,7 @@ export async function getDashboardData(
         select
           t.id,
           t.incident_id,
-          coalesce(t.repairshopr_ticket_number, t.ticket_number::text) as ticket_number,
+          coalesce(t.repairshopr_ticket_number, t.syncro_ticket_number, t.ticket_number::text) as ticket_number,
           t.title,
           t.description,
           t.status,
@@ -432,17 +437,18 @@ export async function getDashboardData(
           t.assigned_team_id,
           coalesce(u.full_name, u.email, 'Unassigned') as assignee,
           coalesce(tm.name, 'Unrouted') as team,
-          coalesce(rc.email, t.reporter_email) as reporter_email,
+          coalesce(rc.email, sc.email, t.reporter_email) as reporter_email,
           t.sla_due_at::text,
           t.created_at::text,
           greatest(
             t.updated_at,
-            coalesce(t.repairshopr_updated_at, '-infinity'::timestamptz)
+            coalesce(t.repairshopr_updated_at, '-infinity'::timestamptz), coalesce(t.syncro_updated_at, '-infinity'::timestamptz)
           )::text as updated_at,
           t.created_from,
+          t.syncro_url, t.syncro_status,
           t.repairshopr_url,
           t.repairshopr_status,
-          rc.name as repairshopr_customer_name,
+          coalesce(rc.name, sc.name) as repairshopr_customer_name,
           coalesce(count(ial.alert_event_id), 0)::int as duplicate_count,
           t.issue_type,
           t.triage_confidence,
@@ -465,6 +471,7 @@ export async function getDashboardData(
         left join repairshopr_customers rc
           on rc.org_id = t.org_id
          and rc.repairshopr_customer_id = t.repairshopr_customer_id
+        left join syncro_customers sc on sc.org_id = t.org_id and sc.syncro_customer_id = t.syncro_customer_id
         left join lateral (
           select status, model, completed_at, result
           from jev_assessments assessment
@@ -522,10 +529,12 @@ export async function getDashboardData(
           t.updated_at,
           t.repairshopr_updated_at,
           t.created_from,
+          t.syncro_url, t.syncro_status,
           t.repairshopr_url,
           t.repairshopr_status,
           rc.name,
           rc.email,
+          sc.name, sc.email,
           t.issue_type,
           t.triage_confidence,
           t.triage_needs_human,
@@ -555,7 +564,7 @@ export async function getDashboardData(
           end,
           greatest(
             t.updated_at,
-            coalesce(t.repairshopr_updated_at, '-infinity'::timestamptz)
+            coalesce(t.repairshopr_updated_at, '-infinity'::timestamptz), coalesce(t.syncro_updated_at, '-infinity'::timestamptz)
           ) desc,
           t.id
         limit ${ticketLimit}
@@ -566,7 +575,7 @@ export async function getDashboardData(
           select
             t.id,
             t.incident_id,
-            coalesce(t.repairshopr_ticket_number, t.ticket_number::text) as ticket_number,
+            coalesce(t.repairshopr_ticket_number, t.syncro_ticket_number, t.ticket_number::text) as ticket_number,
             t.title,
             t.description,
             t.status,
@@ -577,21 +586,22 @@ export async function getDashboardData(
             t.assigned_team_id,
             coalesce(u.full_name, u.email, 'Unassigned') as assignee,
             coalesce(tm.name, 'Unrouted') as team,
-            coalesce(rc.email, t.reporter_email) as reporter_email,
+            coalesce(rc.email, sc.email, t.reporter_email) as reporter_email,
             t.sla_due_at::text,
             t.created_at::text,
             greatest(
               t.updated_at,
-              coalesce(t.repairshopr_updated_at, '-infinity'::timestamptz)
+              coalesce(t.repairshopr_updated_at, '-infinity'::timestamptz), coalesce(t.syncro_updated_at, '-infinity'::timestamptz)
             )::text as updated_at,
             greatest(
               t.updated_at,
-              coalesce(t.repairshopr_updated_at, '-infinity'::timestamptz)
+              coalesce(t.repairshopr_updated_at, '-infinity'::timestamptz), coalesce(t.syncro_updated_at, '-infinity'::timestamptz)
             ) as updated_at_sort,
             t.created_from,
-            t.repairshopr_url,
+            t.syncro_url, t.syncro_status,
+          t.repairshopr_url,
             t.repairshopr_status,
-            rc.name as repairshopr_customer_name,
+            coalesce(rc.name, sc.name) as repairshopr_customer_name,
             0::int as duplicate_count
           from tickets t
           left join users u on u.id = t.assigned_user_id
@@ -599,6 +609,7 @@ export async function getDashboardData(
           left join repairshopr_customers rc
             on rc.org_id = t.org_id
            and rc.repairshopr_customer_id = t.repairshopr_customer_id
+        left join syncro_customers sc on sc.org_id = t.org_id and sc.syncro_customer_id = t.syncro_customer_id
         ),
         urgent_tickets as (
           select *
@@ -664,7 +675,7 @@ export async function getDashboardData(
             end,
             greatest(
               t.updated_at,
-              coalesce(t.repairshopr_updated_at, '-infinity'::timestamptz)
+              coalesce(t.repairshopr_updated_at, '-infinity'::timestamptz), coalesce(t.syncro_updated_at, '-infinity'::timestamptz)
             ) desc,
             t.id
           limit ${ticketLimit}
@@ -778,7 +789,7 @@ export async function getDashboardData(
       commentsByTicket.set(comment.ticket_id, comments);
     }
 
-    const repairshoprStatus = await getRepairShoprStatus();
+    const [repairshoprStatus, syncroStatus] = await Promise.all([getRepairShoprStatus(), getSyncroStatus()]);
 
     return {
       source: "database",
@@ -812,6 +823,7 @@ export async function getDashboardData(
       },
       integrations: {
         jev: getJevIntegrationStatus(),
+        syncro: { configured: syncroStatus.configured, connected: syncroStatus.connected, lastSyncAt: syncroStatus.lastSyncAt, lastStatus: syncroStatus.lastStatus },
         repairshopr: {
           configured: repairshoprStatus.configured,
           connected: repairshoprStatus.connected,

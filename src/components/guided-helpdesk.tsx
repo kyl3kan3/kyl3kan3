@@ -28,6 +28,7 @@ import { useRouter } from "next/navigation";
 import { useMemo, useRef, useState, useTransition } from "react";
 import type { FormEvent, ReactNode, RefObject } from "react";
 import { HelpdeskShell } from "@/components/helpdesk-shell";
+import { SyncroIntegrationCard } from "@/components/syncro-integration-card";
 import type { ShellSection } from "@/components/helpdesk-shell";
 import { useDialogFocus } from "@/components/use-dialog-focus";
 import {
@@ -454,6 +455,9 @@ function TicketTask({
       <div className="ticket-row-content">
         <div className="ticket-row-top">
           <span className="ticket-number">TK-{ticket.ticketNumber}</span>
+          {ticket.createdFrom === "syncro" || ticket.createdFrom === "repairshopr" ? (
+            <span className="text-xs text-ink-muted">{ticket.createdFrom === "syncro" ? "Syncro" : "RepairShopr"}</span>
+          ) : null}
           <span
             className={`inline-flex h-5 items-center rounded px-1.5 text-[10px] font-medium ${priorityClass[ticket.priority]}`}
           >
@@ -1543,7 +1547,10 @@ export function TicketDetailConsole({
     : null;
   const isLive = data.source === "database";
   const canMutate = isLive || (data.source === "demo" && !data.dbError);
-  const isRepairShoprTicket = ticket?.createdFrom === "repairshopr";
+  const sourceProvider = ticket?.createdFrom === "syncro" ? "Syncro" : "RepairShopr";
+  const isMirroredTicket = ticket?.createdFrom === "repairshopr" || ticket?.createdFrom === "syncro";
+  const sourceUrl = ticket?.syncroUrl ?? ticket?.repairshoprUrl;
+  const sourceStatus = ticket?.syncroStatus ?? ticket?.repairshoprStatus;
   const teamUsers = usersForTeam(data.users, ticket?.assignedTeamId ?? null);
 
   function submitNote(event: FormEvent<HTMLFormElement>) {
@@ -1634,17 +1641,17 @@ export function TicketDetailConsole({
                       : "No due time"
                   }
                 />
-                {ticket.repairshoprStatus ? (
+                {sourceStatus ? (
                   <InfoLine
-                    label="RepairShopr"
-                    value={ticket.repairshoprStatus}
+                    label={sourceProvider}
+                    value={sourceStatus}
                   />
                 ) : null}
               </div>
               <div className="mt-6 grid gap-3 sm:grid-cols-3">
-                {isRepairShoprTicket ? (
+                {isMirroredTicket ? (
                   <div className="rounded-lg bg-surface-muted px-4 py-3 text-sm font-medium leading-6 text-ink-muted ring-1 ring-border sm:col-span-3">
-                    RepairShopr owns this ticket status. Update it there so the
+                    {sourceProvider} owns this ticket status. Update it there so the
                     next sync does not replace a local-only change.
                   </div>
                 ) : (
@@ -1695,23 +1702,23 @@ export function TicketDetailConsole({
             <section className="rounded-xl border border-border bg-white p-5 shadow-sm">
               <h3 className="text-lg font-semibold text-ink">Details</h3>
               <div className="mt-4 grid gap-3">
-                {ticket.repairshoprUrl ? (
+                {sourceUrl ? (
                   <Link
-                    href={ticket.repairshoprUrl}
+                    href={sourceUrl}
                     target="_blank"
                     rel="noreferrer"
                     className="btn-soft inline-flex h-11 items-center justify-center gap-2 rounded-full px-4 text-sm font-semibold"
                   >
                     <Settings className="h-4 w-4" />
-                    Open in RepairShopr
+                    Open in {sourceProvider}
                   </Link>
                 ) : null}
                 <SelectField
                   labelText={
-                    isRepairShoprTicket ? "Status (RepairShopr)" : "Status"
+                    isMirroredTicket ? `Status (${sourceProvider})` : "Status"
                   }
                   value={ticket.status}
-                  disabled={isPending || !canMutate || isRepairShoprTicket}
+                  disabled={isPending || !canMutate || isMirroredTicket}
                   onChange={(value) => {
                     if (
                       isActive(ticket) &&
@@ -2551,6 +2558,8 @@ export function SettingsConsole({
             are redacted before ticket text is sent to Jev.
           </p>
         </SetupCard>
+
+        <SyncroIntegrationCard />
 
         <SetupCard
           icon={<Settings className="h-5 w-5" />}

@@ -22,7 +22,7 @@ type MirroredTicketRow = {
   completion_cycle: number | string;
 };
 
-export type RepairShoprConfig = {
+export type SyncroConfig = {
   configured: boolean;
   subdomain: string | null;
   apiKeyPresent: boolean;
@@ -31,7 +31,7 @@ export type RepairShoprConfig = {
   baseUrl: string | null;
 };
 
-export type RepairShoprStatus = {
+export type SyncroStatus = {
   configured: boolean;
   connected: boolean;
   lastSyncAt: string | null;
@@ -39,7 +39,7 @@ export type RepairShoprStatus = {
   lastError: string | null;
 };
 
-export type RepairShoprCustomer = {
+export type SyncroCustomer = {
   id: string;
   name: string | null;
   email: string | null;
@@ -48,13 +48,13 @@ export type RepairShoprCustomer = {
   raw: Record<string, unknown>;
 };
 
-export type RepairShoprTicket = {
+export type SyncroTicket = {
   id: string;
   number: string | null;
   title: string;
   description: string | null;
   status: TicketStatus;
-  repairshoprStatus: string | null;
+  syncroStatus: string | null;
   priority: Priority;
   customerId: string | null;
   customerEmail: string | null;
@@ -64,7 +64,7 @@ export type RepairShoprTicket = {
   raw: Record<string, unknown>;
 };
 
-export type RepairShoprSyncResult = {
+export type SyncroSyncResult = {
   ok: true;
   customersSynced: number;
   ticketsSynced: number;
@@ -82,8 +82,8 @@ const activeStatuses = new Set([
   "in progress",
 ]);
 
-let repairShoprSchemaPromise: Promise<void> | null = null;
-let repairShoprAuthPreference: {
+let syncroSchemaPromise: Promise<void> | null = null;
+let syncroAuthPreference: {
   cacheKey: string;
   mode: "header" | "query";
 } | null = null;
@@ -171,7 +171,7 @@ function scorePriority(text: string): Priority {
   return "P3";
 }
 
-export function normalizeRepairShoprStatus(status: unknown): TicketStatus {
+export function normalizeSyncroStatus(status: unknown): TicketStatus {
   const value = cleanString(status).toLowerCase().replace(/[_-]+/g, " ");
 
   if (!value) return "triaged";
@@ -186,26 +186,26 @@ export function normalizeRepairShoprStatus(status: unknown): TicketStatus {
   return "triaged";
 }
 
-export function getRepairShoprConfig(): RepairShoprConfig {
-  const configuredSubdomain = process.env.REPAIRSHOPR_SUBDOMAIN?.trim() ?? "";
+export function getSyncroConfig(): SyncroConfig {
+  const configuredSubdomain = process.env.SYNCRO_SUBDOMAIN?.trim() ?? "";
   const subdomain = configuredSubdomain
     .replace(/^https?:\/\//i, "")
     .replace(/\/.*$/, "")
-    .replace(/\.repairshopr\.com$/i, "")
+    .replace(/\.syncromsp\.com$/i, "")
     .toLowerCase();
-  const apiKey = process.env.REPAIRSHOPR_API_KEY?.trim() ?? "";
+  const apiKey = process.env.SYNCRO_API_KEY?.trim() ?? "";
   const validSubdomain = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(
     subdomain,
   );
   const baseUrl = validSubdomain
-    ? `https://${subdomain}.repairshopr.com/api/v1`
+    ? `https://${subdomain}.syncromsp.com/api/v1`
     : null;
 
   return {
     configured: Boolean(validSubdomain && apiKey),
     subdomain: validSubdomain ? subdomain : null,
     apiKeyPresent: Boolean(apiKey),
-    syncSecretPresent: Boolean(process.env.REPAIRSHOPR_SYNC_SECRET?.trim()),
+    syncSecretPresent: Boolean(process.env.SYNCRO_SYNC_SECRET?.trim()),
     cronSecretPresent: Boolean(process.env.CRON_SECRET?.trim()),
     baseUrl,
   };
@@ -220,9 +220,9 @@ function secretsMatch(left: string, right: string) {
   return mismatch === 0;
 }
 
-export function isRepairShoprRequestAuthorized(request: Request) {
+export function isSyncroRequestAuthorized(request: Request) {
   const configuredSecrets = [
-    process.env.REPAIRSHOPR_SYNC_SECRET?.trim(),
+    process.env.SYNCRO_SYNC_SECRET?.trim(),
     process.env.CRON_SECRET?.trim(),
   ].filter((secret): secret is string => Boolean(secret));
   if (configuredSecrets.length === 0) return false;
@@ -230,7 +230,7 @@ export function isRepairShoprRequestAuthorized(request: Request) {
   const authorization = request.headers.get("authorization")?.trim() ?? "";
   const bearerSecret = authorization.match(/^Bearer\s+(.+)$/i)?.[1]?.trim() ?? "";
   const headerSecret =
-    request.headers.get("x-repairshopr-sync-secret")?.trim() ??
+    request.headers.get("x-syncro-sync-secret")?.trim() ??
     request.headers.get("x-sync-secret")?.trim() ??
     "";
   const presentedSecrets = [bearerSecret, headerSecret].filter(Boolean);
@@ -242,9 +242,9 @@ export function isRepairShoprRequestAuthorized(request: Request) {
   );
 }
 
-export function normalizeRepairShoprCustomer(
+export function normalizeSyncroCustomer(
   value: unknown,
-): RepairShoprCustomer | null {
+): SyncroCustomer | null {
   const customer = objectValue(value);
   if (!customer) return null;
 
@@ -270,10 +270,10 @@ export function normalizeRepairShoprCustomer(
   };
 }
 
-export function normalizeRepairShoprTicket(
+export function normalizeSyncroTicket(
   value: unknown,
   baseUrl?: string | null,
-): RepairShoprTicket | null {
+): SyncroTicket | null {
   const ticket = objectValue(value);
   if (!ticket) return null;
 
@@ -285,13 +285,13 @@ export function normalizeRepairShoprTicket(
   const subject =
     firstString(ticket, ["subject", "title", "summary"]) ??
     problemType ??
-    `RepairShopr ticket ${number ?? id}`;
+    `Syncro ticket ${number ?? id}`;
   const description =
     firstString(ticket, ["description", "issue", "diagnosis", "notes"]) ??
     firstCommentText(ticket.comments) ??
     firstString(ticket, ["initial_issue", "initialIssue"]) ??
     (problemType && problemType !== subject ? problemType : null);
-  const repairshoprStatus = firstString(ticket, ["status", "status_name", "statusName"]);
+  const syncroStatus = firstString(ticket, ["status", "status_name", "statusName"]);
   const customerId =
     firstString(ticket, ["customer_id", "customerId"]) ??
     nestedString(ticket, ["customer"], ["id", "customer_id", "customerId"]);
@@ -303,7 +303,7 @@ export function normalizeRepairShoprTicket(
   );
   const createdAt = dateOrNull(ticket.created_at ?? ticket.createdAt);
   const priority = scorePriority(
-    [subject, description, repairshoprStatus, firstString(ticket, ["priority"])].join(" "),
+    [subject, description, syncroStatus, firstString(ticket, ["priority"])].join(" "),
   );
 
   return {
@@ -311,8 +311,8 @@ export function normalizeRepairShoprTicket(
     number,
     title: subject.slice(0, 180),
     description,
-    status: normalizeRepairShoprStatus(repairshoprStatus),
-    repairshoprStatus,
+    status: normalizeSyncroStatus(syncroStatus),
+    syncroStatus,
     priority,
     customerId,
     customerEmail,
@@ -323,34 +323,34 @@ export function normalizeRepairShoprTicket(
   };
 }
 
-export function extractRepairShoprCustomers(payload: unknown) {
+export function extractSyncroCustomers(payload: unknown) {
   return listValue(payload, "customers")
-    .map(normalizeRepairShoprCustomer)
-    .filter((customer): customer is RepairShoprCustomer => Boolean(customer));
+    .map(normalizeSyncroCustomer)
+    .filter((customer): customer is SyncroCustomer => Boolean(customer));
 }
 
-export function extractRepairShoprTickets(payload: unknown, baseUrl?: string | null) {
+export function extractSyncroTickets(payload: unknown, baseUrl?: string | null) {
   return listValue(payload, "tickets")
-    .map((ticket) => normalizeRepairShoprTicket(ticket, baseUrl))
-    .filter((ticket): ticket is RepairShoprTicket => Boolean(ticket));
+    .map((ticket) => normalizeSyncroTicket(ticket, baseUrl))
+    .filter((ticket): ticket is SyncroTicket => Boolean(ticket));
 }
 
-async function applyRepairShoprSchema() {
+async function applySyncroSchema() {
   const sql = getSql();
 
-  await sql`alter table tickets add column if not exists repairshopr_ticket_id text`;
-  await sql`alter table tickets add column if not exists repairshopr_ticket_number text`;
-  await sql`alter table tickets add column if not exists repairshopr_customer_id text`;
-  await sql`alter table tickets add column if not exists repairshopr_status text`;
-  await sql`alter table tickets add column if not exists repairshopr_url text`;
-  await sql`alter table tickets add column if not exists repairshopr_updated_at timestamptz`;
-  await sql`alter table tickets add column if not exists repairshopr_payload jsonb`;
+  await sql`alter table tickets add column if not exists syncro_ticket_id text`;
+  await sql`alter table tickets add column if not exists syncro_ticket_number text`;
+  await sql`alter table tickets add column if not exists syncro_customer_id text`;
+  await sql`alter table tickets add column if not exists syncro_status text`;
+  await sql`alter table tickets add column if not exists syncro_url text`;
+  await sql`alter table tickets add column if not exists syncro_updated_at timestamptz`;
+  await sql`alter table tickets add column if not exists syncro_payload jsonb`;
 
   await sql`
-    create table if not exists repairshopr_customers (
+    create table if not exists syncro_customers (
       id uuid primary key default gen_random_uuid(),
       org_id uuid not null references orgs(id) on delete cascade,
-      repairshopr_customer_id text not null,
+      syncro_customer_id text not null,
       name text,
       email text,
       phone text,
@@ -359,12 +359,12 @@ async function applyRepairShoprSchema() {
       last_synced_at timestamptz not null default now(),
       created_at timestamptz not null default now(),
       updated_at timestamptz not null default now(),
-      unique(org_id, repairshopr_customer_id)
+      unique(org_id, syncro_customer_id)
     )
   `;
 
   await sql`
-    create table if not exists repairshopr_sync_runs (
+    create table if not exists syncro_sync_runs (
       id uuid primary key default gen_random_uuid(),
       org_id uuid references orgs(id) on delete cascade,
       started_at timestamptz not null default now(),
@@ -377,7 +377,7 @@ async function applyRepairShoprSchema() {
     )
   `;
   await sql`
-    create table if not exists repairshopr_sync_locks (
+    create table if not exists syncro_sync_locks (
       org_id uuid primary key references orgs(id) on delete cascade,
       lock_token uuid not null,
       acquired_at timestamptz not null default now(),
@@ -386,31 +386,31 @@ async function applyRepairShoprSchema() {
   `;
 
   await sql`
-    create unique index if not exists tickets_org_repairshopr_ticket_idx
-    on tickets(org_id, repairshopr_ticket_id)
-    where repairshopr_ticket_id is not null
+    create unique index if not exists tickets_org_syncro_ticket_idx
+    on tickets(org_id, syncro_ticket_id)
+    where syncro_ticket_id is not null
   `;
   await sql`
-    create index if not exists tickets_org_repairshopr_customer_idx
-    on tickets(org_id, repairshopr_customer_id)
-    where repairshopr_customer_id is not null
+    create index if not exists tickets_org_syncro_customer_idx
+    on tickets(org_id, syncro_customer_id)
+    where syncro_customer_id is not null
   `;
   await sql`
-    create index if not exists repairshopr_sync_runs_started_idx
-    on repairshopr_sync_runs(started_at desc)
+    create index if not exists syncro_sync_runs_started_idx
+    on syncro_sync_runs(started_at desc)
   `;
   await sql`
-    drop trigger if exists repairshopr_customers_touch_updated_at
-    on repairshopr_customers
+    drop trigger if exists syncro_customers_touch_updated_at
+    on syncro_customers
   `;
   await sql`
-    create trigger repairshopr_customers_touch_updated_at
-    before update on repairshopr_customers
+    create trigger syncro_customers_touch_updated_at
+    before update on syncro_customers
     for each row execute function touch_updated_at()
   `;
 }
 
-async function isRepairShoprSchemaReady() {
+async function isSyncroSchemaReady() {
   const sql = getSql();
   const rows = (await sql`
     select (
@@ -420,23 +420,23 @@ async function isRepairShoprSchemaReady() {
         where table_schema = current_schema()
           and table_name = 'tickets'
           and column_name in (
-            'repairshopr_ticket_id',
-            'repairshopr_ticket_number',
-            'repairshopr_customer_id',
-            'repairshopr_status',
-            'repairshopr_url',
-            'repairshopr_updated_at',
-            'repairshopr_payload'
+            'syncro_ticket_id',
+            'syncro_ticket_number',
+            'syncro_customer_id',
+            'syncro_status',
+            'syncro_url',
+            'syncro_updated_at',
+            'syncro_payload'
           )
       )
-      and to_regclass('repairshopr_customers') is not null
-      and to_regclass('repairshopr_sync_runs') is not null
-      and to_regclass('repairshopr_sync_locks') is not null
+      and to_regclass('syncro_customers') is not null
+      and to_regclass('syncro_sync_runs') is not null
+      and to_regclass('syncro_sync_locks') is not null
       and exists (
         select 1
         from pg_trigger
-        where tgrelid = to_regclass('repairshopr_customers')
-          and tgname = 'repairshopr_customers_touch_updated_at'
+        where tgrelid = to_regclass('syncro_customers')
+          and tgname = 'syncro_customers_touch_updated_at'
           and not tgisinternal
       )
     ) as ready
@@ -445,19 +445,19 @@ async function isRepairShoprSchemaReady() {
   return Boolean(rows[0]?.ready);
 }
 
-async function initializeRepairShoprSchema() {
-  if (await isRepairShoprSchemaReady()) return;
-  await applyRepairShoprSchema();
+async function initializeSyncroSchema() {
+  if (await isSyncroSchemaReady()) return;
+  await applySyncroSchema();
 }
 
-export async function ensureRepairShoprSchema() {
+export async function ensureSyncroSchema() {
   if (!hasDatabaseUrl()) return;
 
-  repairShoprSchemaPromise ??= initializeRepairShoprSchema();
+  syncroSchemaPromise ??= initializeSyncroSchema();
   try {
-    await repairShoprSchemaPromise;
+    await syncroSchemaPromise;
   } catch (error) {
-    repairShoprSchemaPromise = null;
+    syncroSchemaPromise = null;
     throw error;
   }
 }
@@ -481,10 +481,10 @@ function formatCursor(value: string | null) {
   return new Date(date.getTime() - 60_000).toISOString();
 }
 
-async function repairShoprFetch(path: string, params: Record<string, string>) {
-  const config = getRepairShoprConfig();
+async function syncroFetch(path: string, params: Record<string, string>) {
+  const config = getSyncroConfig();
   if (!config.configured || !config.baseUrl) {
-    throw new Error("RepairShopr is not configured");
+    throw new Error("Syncro is not configured");
   }
 
   const url = new URL(`${config.baseUrl}${path}`);
@@ -492,14 +492,14 @@ async function repairShoprFetch(path: string, params: Record<string, string>) {
     if (value) url.searchParams.set(key, value);
   }
 
-  const apiKey = process.env.REPAIRSHOPR_API_KEY?.trim() ?? "";
+  const apiKey = process.env.SYNCRO_API_KEY?.trim() ?? "";
   const queryApiKey = apiKey.replace(/^Bearer\s+/i, "");
   const authCacheKey = `${config.baseUrl}:${apiKey}`;
-  if (repairShoprAuthPreference?.cacheKey !== authCacheKey) {
-    repairShoprAuthPreference = null;
+  if (syncroAuthPreference?.cacheKey !== authCacheKey) {
+    syncroAuthPreference = null;
   }
   const configuredTimeout = Number.parseInt(
-    process.env.REPAIRSHOPR_FETCH_TIMEOUT_MS ?? "15000",
+    process.env.SYNCRO_FETCH_TIMEOUT_MS ?? "15000",
     10,
   );
   const timeoutMs = Math.min(
@@ -511,7 +511,7 @@ async function repairShoprFetch(path: string, params: Record<string, string>) {
     const requestUrl = new URL(url);
     const headers: Record<string, string> = { accept: "application/json" };
     if (mode === "header") {
-      headers.authorization = apiKey;
+      headers.authorization = `Bearer ${queryApiKey}`;
     } else {
       requestUrl.searchParams.set("api_key", queryApiKey);
     }
@@ -524,12 +524,12 @@ async function repairShoprFetch(path: string, params: Record<string, string>) {
         signal: AbortSignal.timeout(timeoutMs),
       });
     } catch (error) {
-      const reason = error instanceof Error ? error.message : "request failed";
-      throw new Error(`RepairShopr ${path} request failed: ${reason}`);
+      const reason = error instanceof Error && error.name === "TimeoutError" ? "request timed out" : "network request failed";
+      throw new Error(`Syncro ${path} request failed: ${reason}`);
     }
   }
 
-  let authMode = repairShoprAuthPreference?.mode ?? "header";
+  let authMode = syncroAuthPreference?.mode ?? "header";
   let response = await requestWithAuth(authMode);
   if (
     authMode === "header" &&
@@ -540,10 +540,10 @@ async function repairShoprFetch(path: string, params: Record<string, string>) {
   }
 
   if (!response.ok) {
-    throw new Error(`RepairShopr ${path} failed (${response.status})`);
+    throw new Error(`Syncro ${path} failed (${response.status})`);
   }
 
-  repairShoprAuthPreference = { cacheKey: authCacheKey, mode: authMode };
+  syncroAuthPreference = { cacheKey: authCacheKey, mode: authMode };
 
   return response.json() as Promise<unknown>;
 }
@@ -562,7 +562,7 @@ function getPaginationMeta(payload: unknown) {
   };
 }
 
-async function fetchAllRepairShopr<T>(
+async function fetchAllSyncro<T>(
   path: string,
   normalize: (payload: unknown) => T[],
   extraParams: Record<string, string> = {},
@@ -570,12 +570,12 @@ async function fetchAllRepairShopr<T>(
 ) {
   const maxPages = Math.max(
     1,
-    Number.parseInt(process.env.REPAIRSHOPR_MAX_PAGES ?? "10", 10) || 10,
+    Number.parseInt(process.env.SYNCRO_MAX_PAGES ?? "10", 10) || 10,
   );
   const all: T[] = [];
 
   for (let page = 1; page <= maxPages; page += 1) {
-    const payload = await repairShoprFetch(path, {
+    const payload = await syncroFetch(path, {
       page: String(page),
       ...extraParams,
     });
@@ -587,7 +587,7 @@ async function fetchAllRepairShopr<T>(
     if (items.length === 0) {
       if (meta && meta.page < meta.totalPages) {
         throw new Error(
-          `RepairShopr ${path} page ${meta.page} returned no usable records before page ${meta.totalPages}`,
+          `Syncro ${path} page ${meta.page} returned no usable records before page ${meta.totalPages}`,
         );
       }
       break;
@@ -596,7 +596,7 @@ async function fetchAllRepairShopr<T>(
     if (page >= maxPages) {
       const total = meta ? ` of ${meta.totalPages}` : "";
       throw new Error(
-        `RepairShopr ${path} pagination stopped at page ${page}${total}; increase REPAIRSHOPR_MAX_PAGES to complete the sync`,
+        `Syncro ${path} pagination stopped at page ${page}${total}; increase SYNCRO_MAX_PAGES to complete the sync`,
       );
     }
 
@@ -606,12 +606,12 @@ async function fetchAllRepairShopr<T>(
   return all;
 }
 
-async function upsertCustomer(orgId: string, customer: RepairShoprCustomer) {
+async function upsertCustomer(orgId: string, customer: SyncroCustomer) {
   const sql = getSql();
   await sql`
-    insert into repairshopr_customers (
+    insert into syncro_customers (
       org_id,
-      repairshopr_customer_id,
+      syncro_customer_id,
       name,
       email,
       phone,
@@ -629,7 +629,7 @@ async function upsertCustomer(orgId: string, customer: RepairShoprCustomer) {
       ${JSON.stringify(customer.raw)}::jsonb,
       now()
     )
-    on conflict (org_id, repairshopr_customer_id) do update
+    on conflict (org_id, syncro_customer_id) do update
       set name = excluded.name,
           email = excluded.email,
           phone = excluded.phone,
@@ -639,12 +639,12 @@ async function upsertCustomer(orgId: string, customer: RepairShoprCustomer) {
   `;
 }
 
-async function upsertTicket(orgId: string, ticket: RepairShoprTicket) {
+async function upsertTicket(orgId: string, ticket: SyncroTicket) {
   const sql = getSql();
   const existingRows = (await sql`
     select id::text, status, completion_cycle
     from tickets
-    where org_id = ${orgId} and repairshopr_ticket_id = ${ticket.id}
+    where org_id = ${orgId} and syncro_ticket_id = ${ticket.id}
     limit 1
   `) as MirroredTicketRow[];
   const existing = existingRows[0] ?? null;
@@ -660,13 +660,13 @@ async function upsertTicket(orgId: string, ticket: RepairShoprTicket) {
       reporter_email,
       created_from,
       created_at,
-      repairshopr_ticket_id,
-      repairshopr_ticket_number,
-      repairshopr_customer_id,
-      repairshopr_status,
-      repairshopr_url,
-      repairshopr_updated_at,
-      repairshopr_payload
+      syncro_ticket_id,
+      syncro_ticket_number,
+      syncro_customer_id,
+      syncro_status,
+      syncro_url,
+      syncro_updated_at,
+      syncro_payload
     )
     values (
       ${orgId},
@@ -680,42 +680,42 @@ async function upsertTicket(orgId: string, ticket: RepairShoprTicket) {
         ${ticket.customerEmail},
         (
           select email
-          from repairshopr_customers
+          from syncro_customers
           where org_id = ${orgId}
-            and repairshopr_customer_id = ${ticket.customerId}
+            and syncro_customer_id = ${ticket.customerId}
           limit 1
         )
       ),
-      'repairshopr',
+      'syncro',
       coalesce(${ticket.createdAt}::timestamptz, now()),
       ${ticket.id},
       ${ticket.number},
       ${ticket.customerId},
-      ${ticket.repairshoprStatus},
+      ${ticket.syncroStatus},
       ${ticket.url},
       ${ticket.updatedAt},
       ${JSON.stringify(ticket.raw)}::jsonb
     )
-    on conflict (org_id, repairshopr_ticket_id) where repairshopr_ticket_id is not null do update
+    on conflict (org_id, syncro_ticket_id) where syncro_ticket_id is not null do update
       set title = excluded.title,
           description = excluded.description,
           status = excluded.status,
           reporter_email = excluded.reporter_email,
-          created_from = 'repairshopr',
-          repairshopr_ticket_number = excluded.repairshopr_ticket_number,
-          repairshopr_customer_id = excluded.repairshopr_customer_id,
-          repairshopr_status = excluded.repairshopr_status,
-          repairshopr_url = excluded.repairshopr_url,
-          repairshopr_updated_at = excluded.repairshopr_updated_at,
-          repairshopr_payload = excluded.repairshopr_payload
-      where tickets.repairshopr_updated_at is distinct from excluded.repairshopr_updated_at
-         or tickets.repairshopr_payload is distinct from excluded.repairshopr_payload
+          created_from = 'syncro',
+          syncro_ticket_number = excluded.syncro_ticket_number,
+          syncro_customer_id = excluded.syncro_customer_id,
+          syncro_status = excluded.syncro_status,
+          syncro_url = excluded.syncro_url,
+          syncro_updated_at = excluded.syncro_updated_at,
+          syncro_payload = excluded.syncro_payload
+      where tickets.syncro_updated_at is distinct from excluded.syncro_updated_at
+         or tickets.syncro_payload is distinct from excluded.syncro_payload
   `;
 
   const mirroredRows = (await sql`
     select id::text, status, completion_cycle
     from tickets
-    where org_id = ${orgId} and repairshopr_ticket_id = ${ticket.id}
+    where org_id = ${orgId} and syncro_ticket_id = ${ticket.id}
     limit 1
   `) as MirroredTicketRow[];
   const mirrored = mirroredRows[0];
@@ -737,8 +737,8 @@ async function upsertTicket(orgId: string, ticket: RepairShoprTicket) {
         null,
         ${ticket.status},
         0,
-        'repairshopr',
-        ${JSON.stringify({ repairshoprTicketId: ticket.id })}::jsonb
+        'syncro',
+        ${JSON.stringify({ syncroTicketId: ticket.id })}::jsonb
       )
     `;
     await enqueueTicketTriage({
@@ -747,12 +747,12 @@ async function upsertTicket(orgId: string, ticket: RepairShoprTicket) {
       ticket: {
         title: ticket.title,
         description: ticket.description,
-        source: "repairshopr",
+        source: "syncro",
         service: "support_portal",
         severity: ticket.priority,
       },
       fallbackPriority: ticket.priority,
-      idempotencyKey: `triage:${mirrored.id}:repairshopr:${ticket.id}`,
+      idempotencyKey: `triage:${mirrored.id}:syncro:${ticket.id}`,
     });
   }
 
@@ -792,8 +792,8 @@ async function upsertTicket(orgId: string, ticket: RepairShoprTicket) {
         ${existing.status},
         ${ticket.status},
         ${completionCycle},
-        'repairshopr',
-        ${JSON.stringify({ repairshoprTicketId: ticket.id, reopening })}::jsonb
+        'syncro',
+        ${JSON.stringify({ syncroTicketId: ticket.id, reopening })}::jsonb
       )
     `;
     if (completing) {
@@ -814,7 +814,7 @@ async function acquireSyncLock(orgId: string) {
   const sql = getSql();
   const lockToken = randomUUID();
   const rows = (await sql`
-    insert into repairshopr_sync_locks (
+    insert into syncro_sync_locks (
       org_id,
       lock_token,
       acquired_at,
@@ -830,12 +830,12 @@ async function acquireSyncLock(orgId: string) {
       set lock_token = excluded.lock_token,
           acquired_at = excluded.acquired_at,
           expires_at = excluded.expires_at
-      where repairshopr_sync_locks.expires_at <= now()
+      where syncro_sync_locks.expires_at <= now()
     returning lock_token::text
   `) as SyncLockRow[];
 
   if (!rows[0]) {
-    throw new Error("A RepairShopr sync is already running");
+    throw new Error("A Syncro sync is already running");
   }
 
   return lockToken;
@@ -844,7 +844,7 @@ async function acquireSyncLock(orgId: string) {
 async function releaseSyncLock(orgId: string, lockToken: string) {
   const sql = getSql();
   await sql`
-    delete from repairshopr_sync_locks
+    delete from syncro_sync_locks
     where org_id = ${orgId} and lock_token = ${lockToken}::uuid
   `;
 }
@@ -852,7 +852,7 @@ async function releaseSyncLock(orgId: string, lockToken: string) {
 async function renewSyncLock(orgId: string, lockToken: string) {
   const sql = getSql();
   const rows = (await sql`
-    update repairshopr_sync_locks
+    update syncro_sync_locks
     set expires_at = now() + interval '15 minutes'
     where org_id = ${orgId}
       and lock_token = ${lockToken}::uuid
@@ -860,12 +860,12 @@ async function renewSyncLock(orgId: string, lockToken: string) {
   `) as SyncLockRow[];
 
   if (!rows[0]) {
-    throw new Error("The RepairShopr sync lock was lost");
+    throw new Error("The Syncro sync lock was lost");
   }
 }
 
-export async function getRepairShoprStatus(): Promise<RepairShoprStatus> {
-  const config = getRepairShoprConfig();
+export async function getSyncroStatus(): Promise<SyncroStatus> {
+  const config = getSyncroConfig();
   if (!config.configured || !hasDatabaseUrl()) {
     return {
       configured: config.configured,
@@ -876,11 +876,11 @@ export async function getRepairShoprStatus(): Promise<RepairShoprStatus> {
     };
   }
 
-  await ensureRepairShoprSchema();
+  await ensureSyncroSchema();
   const sql = getSql();
   const rows = (await sql`
     select status, finished_at::text, error, cursor_updated_at::text
-    from repairshopr_sync_runs
+    from syncro_sync_runs
     order by started_at desc
     limit 1
   `) as SyncRunRow[];
@@ -895,28 +895,28 @@ export async function getRepairShoprStatus(): Promise<RepairShoprStatus> {
   };
 }
 
-export async function testRepairShoprConnection() {
-  const config = getRepairShoprConfig();
+export async function testSyncroConnection() {
+  const config = getSyncroConfig();
   if (!config.configured) {
-    throw new Error("RepairShopr subdomain and API key are required");
+    throw new Error("Syncro subdomain and API key are required");
   }
 
-  await repairShoprFetch("/customers", { page: "1" });
-  await repairShoprFetch("/tickets", { page: "1" });
+  await syncroFetch("/customers", { page: "1" });
+  await syncroFetch("/tickets", { page: "1" });
   return { ok: true, baseUrl: config.baseUrl };
 }
 
-export async function syncRepairShopr(): Promise<RepairShoprSyncResult> {
+export async function syncSyncro(): Promise<SyncroSyncResult> {
   if (!hasDatabaseUrl()) {
     throw new Error("DATABASE_URL is not configured");
   }
 
-  const config = getRepairShoprConfig();
+  const config = getSyncroConfig();
   if (!config.configured || !config.baseUrl) {
-    throw new Error("RepairShopr subdomain and API key are required");
+    throw new Error("Syncro subdomain and API key are required");
   }
 
-  await Promise.all([ensureRepairShoprSchema(), ensureJevSchema()]);
+  await Promise.all([ensureSyncroSchema(), ensureJevSchema()]);
   const sql = getSql();
   const orgId = await ensureDefaultOrg();
   const lockToken = await acquireSyncLock(orgId);
@@ -924,7 +924,7 @@ export async function syncRepairShopr(): Promise<RepairShoprSyncResult> {
 
   try {
     await sql`
-      update repairshopr_sync_runs
+      update syncro_sync_runs
       set status = 'error',
           finished_at = now(),
           error = 'Sync did not finish before its lock expired'
@@ -933,7 +933,7 @@ export async function syncRepairShopr(): Promise<RepairShoprSyncResult> {
         and started_at < now() - interval '15 minutes'
     `;
     const runRows = (await sql`
-      insert into repairshopr_sync_runs (org_id, status)
+      insert into syncro_sync_runs (org_id, status)
       values (${orgId}, 'running')
       returning id
     `) as IdRow[];
@@ -941,16 +941,16 @@ export async function syncRepairShopr(): Promise<RepairShoprSyncResult> {
 
     const cursorRows = (await sql`
       select cursor_updated_at::text
-      from repairshopr_sync_runs
+      from syncro_sync_runs
       where org_id = ${orgId} and status = 'success' and cursor_updated_at is not null
       order by finished_at desc
       limit 1
     `) as { cursor_updated_at: string | null }[];
     const cursor = formatCursor(cursorRows[0]?.cursor_updated_at ?? null);
 
-    const customers = await fetchAllRepairShopr(
+    const customers = await fetchAllSyncro(
       "/customers",
-      extractRepairShoprCustomers,
+      extractSyncroCustomers,
       {},
       () => renewSyncLock(orgId, lockToken),
     );
@@ -961,9 +961,9 @@ export async function syncRepairShopr(): Promise<RepairShoprSyncResult> {
       await upsertCustomer(orgId, customer);
     }
 
-    const tickets = await fetchAllRepairShopr(
+    const tickets = await fetchAllSyncro(
       "/tickets",
-      (payload) => extractRepairShoprTickets(payload, config.baseUrl),
+      (payload) => extractSyncroTickets(payload, config.baseUrl),
       cursor ? { since_updated_at: cursor } : {},
       () => renewSyncLock(orgId, lockToken),
     );
@@ -984,7 +984,7 @@ export async function syncRepairShopr(): Promise<RepairShoprSyncResult> {
 
     await renewSyncLock(orgId, lockToken);
     await sql`
-      update repairshopr_sync_runs
+      update syncro_sync_runs
       set status = 'success',
           finished_at = now(),
           customers_synced = ${customers.length},
@@ -1000,10 +1000,10 @@ export async function syncRepairShopr(): Promise<RepairShoprSyncResult> {
       cursorUpdatedAt,
     };
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown RepairShopr sync error";
+    const message = error instanceof Error ? error.message : "Unknown Syncro sync error";
     if (runId) {
       await sql`
-        update repairshopr_sync_runs
+        update syncro_sync_runs
         set status = 'error',
             finished_at = now(),
             error = ${message}

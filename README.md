@@ -2,7 +2,28 @@
 
 A Vercel + Neon incident triage console built from the MVP blueprint in `BLUEPRINT.md`.
 
-## Stack
+## RepairShopr and Syncro integrations
+
+Both providers support independent, import-only customer and ticket mirrors. Source IDs, customer records, sync locks, cursors, and run history are kept separate, so matching external ticket numbers do not collide. Incoming imports enqueue Jev triage; completion transitions enqueue evidence-based review. Ticket status must be changed in the original system, not in this console.
+
+Configure each account in server environment variables (never paste API keys into client code):
+
+| Provider | Account and API credentials | Manual sync secret |
+| --- | --- | --- |
+| RepairShopr | `REPAIRSHOPR_SUBDOMAIN`, `REPAIRSHOPR_API_KEY` | `REPAIRSHOPR_SYNC_SECRET` |
+| Syncro | `SYNCRO_SUBDOMAIN`, `SYNCRO_API_KEY` | `SYNCRO_SYNC_SECRET` |
+
+Use API credentials with customer and ticket read permissions. In Settings, enter the corresponding **sync secret**, test the connection, then run the initial sync. API keys remain server-side. Protected endpoints live under `/api/integrations/repairshopr` and `/api/integrations/syncro`: `GET /status`, `POST /test`, and `GET` or `POST /sync`. Manual requests accept the matching `x-repairshopr-sync-secret` or `x-syncro-sync-secret` header. Scheduled requests use `Authorization: Bearer <CRON_SECRET>`.
+
+`vercel.json` schedules both mirrors every five minutes (requires a Vercel plan supporting that frequency). Configure `CRON_SECRET` before enabling scheduled runs. Each provider has independent `*_MAX_PAGES` and `*_FETCH_TIMEOUT_MS` controls; page-limit failures do not advance its cursor. Runtime initialization applies the Syncro schema automatically; `db/syncro.sql` is the equivalent explicit migration after `db/schema.sql`.
+
+Limitations: this is not bidirectional synchronization or a guaranteed full-history import. Ticket summaries/initial comments may lack technician actions, verification, and customer next steps. No automatic mapping to employee identities is assumed. Missing evidence is flagged, and unattributed imported work is not assigned to an employee for scoring. Live account connectivity must be verified after credentials are configured.
+
+API references: [RepairShopr](https://api-docs.repairshopr.com/) and [Syncro](https://api-docs.syncromsp.com/).
+
+Production deployment also requires `APP_ACCESS_PASSWORD` and `MANAGER_DASHBOARD_PASSWORD`; do not deploy the protected build without configuring them.
+
+## Technology
 
 - Next.js App Router
 - Vercel deployment target

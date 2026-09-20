@@ -89,6 +89,8 @@ export type TicketQueueItem = {
   createdAt: string;
   updatedAt: string;
   createdFrom: string;
+  syncroUrl?: string | null;
+  syncroStatus?: string | null;
   repairshoprUrl?: string | null;
   repairshoprStatus?: string | null;
   duplicateCount: number;
@@ -182,6 +184,7 @@ export type DashboardData = {
       procedureVersion: string;
       customProceduresConfigured: boolean;
     };
+    syncro?: { configured: boolean; connected: boolean; lastSyncAt: string | null; lastStatus: "running" | "success" | "error" | "not_configured"; };
     repairshopr?: {
       configured: boolean;
       connected: boolean;

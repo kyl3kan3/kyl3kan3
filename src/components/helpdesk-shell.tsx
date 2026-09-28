@@ -10,7 +10,6 @@ import {
   LayoutDashboard,
   SearchCheck,
   Settings,
-  Workflow,
 } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
@@ -90,15 +89,9 @@ export function HelpdeskShell({
           </span>
           <span>
             Alert Triage
-            <span className="brand-caption">SERVICE OPERATIONS</span>
+            <span className="brand-caption">THE SERVICE WORKSPACE</span>
           </span>
         </Link>
-        <div className="workspace-label">
-          <span className="workspace-monogram">AT</span>
-          <span>
-            Helpdesk workspace<small>Operations console</small>
-          </span>
-        </div>
         <nav aria-label="Main navigation" className="sidebar-navigation">
           {navItems.map((item) => {
             const Icon = item.icon;
@@ -106,7 +99,6 @@ export function HelpdeskShell({
             const NavigationLink = item.key === "quality" ? "a" : Link;
             return (
               <div key={item.key}>
-                {item.group && <p className="nav-group-label">{item.group}</p>}
                 <NavigationLink
                   href={item.href}
                   aria-current={active === item.key ? "page" : undefined}
@@ -120,18 +112,7 @@ export function HelpdeskShell({
             );
           })}
         </nav>
-        <div className="sidebar-footer">
-          <Workflow size={20} className="text-blue-300" />
-          <p>Built around your team.</p>
-          <span>
-            Jev assesses. Your rules route.
-            <br />
-            People make the decisions.
-          </span>
-          <a href="/quality" className="sidebar-footer-link">
-            Explore quality review <ArrowUpRight size={15} />
-          </a>
-        </div>
+        <a href="/quality" className="workspace-review-link">Powered by Jev <ArrowUpRight size={15} /></a>
       </aside>
       <div className="workspace-body">
         <header className="workspace-header">

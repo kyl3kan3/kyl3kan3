@@ -10,8 +10,15 @@ export default async function LoginPage({ searchParams }: {
   const next = safeReturnPath(params.next);
   const manager = params.manager === "1" || next.startsWith("/quality");
   return (
-    <main className="flex min-h-screen items-center justify-center px-6 py-12">
-      <section className="w-full max-w-md rounded-2xl border border-border bg-white p-8 shadow-sm">
+    <main className="login-layout">
+      <aside className="login-story">
+        <span className="section-kicker">ALERT TRIAGE / SERVICE OPERATIONS</span>
+        <h2>Good service.<br /><em>Great clarity.</em></h2>
+        <p>A considered space for your tickets, your team, and the quality of the work you do.</p>
+        <div className="login-principles"><span>01 / Understand the request</span><span>02 / Keep the work moving</span><span>03 / Learn from every resolution</span></div>
+        <small>Human-led. Evidence-informed.</small>
+      </aside>
+      <section className="login-form-panel">
         <div className="mb-10 flex items-center gap-3 text-lg font-semibold">
           <span className="rounded-xl bg-accent p-3 text-white"><Command size={23} /></span>
           Alert Triage

@@ -1,0 +1,130 @@
+/* The new workspace identity. Scoped specificity supersedes the legacy palette. */
+:root:root {
+ --background:#f5f5ef; --foreground:#242d29; --surface:#fff;
+ --surface-muted:#f6f7f2; --border:#e1e5dc; --border-strong:#c8d0c4;
+ --ink:#242d29; --ink-muted:#68736c; --accent:#24634e;
+ --accent-soft:#e9f1e7; --accent-glow:rgb(36 99 78 / 12%);
+ --shadow-panel:0 0 0 1px rgb(27 47 35 / 6%),0 2px 3px rgb(27 47 35 / 3%),0 8px 24px rgb(27 47 35 / 3%);
+}
+body ::selection {background:#d7e9ca;color:#183e2e}
+body :where(a,button,summary,input,select,textarea):focus-visible {outline-color:#50836b}
+body .workspace-sidebar {position:relative;inset:auto;display:flex;flex-direction:row;align-items:center;gap:32px;width:100%;min-height:86px;padding:0 36px;overflow:visible;background:white;color:var(--ink);border:0;border-bottom:1px solid var(--border)}
+body .brand-lockup {flex-shrink:0;margin:0;font-size:18px;letter-spacing:-.6px}
+body .brand-mark {width:38px;height:38px;border-radius:50%;background:#244b3b;color:#e0f3c6;box-shadow:none}
+body .brand-caption {color:var(--ink-muted);font-size:8px;letter-spacing:1.5px;font-weight:500}
+body .sidebar-navigation {display:flex;align-items:center;gap:5px;flex:1;padding:0}
+body .nav-link {gap:8px;min-height:44px;padding:10px 12px;margin:0;border-radius:8px;color:var(--ink-muted);font-size:12px;white-space:nowrap}
+body .nav-link:hover {color:var(--ink);background:#f4f5ef}
+body .nav-link.is-active {color:#244b3b;background:#e9efdf;box-shadow:none}
+body .nav-link.is-active svg {color:#24634e}
+body .nav-active-dot {display:none}
+.workspace-review-link {display:flex;align-items:center;gap:7px;min-height:40px;color:var(--accent);font-size:11px;white-space:nowrap}
+body .workspace-body {max-width:1520px;margin:auto}
+body .workspace-header {padding:22px 48px 26px;background:transparent;border:0;max-width:none}
+body .workspace-toolbar {margin-top:14px}
+body .workspace-toolbar h1 {font-size:30px;font-weight:550;letter-spacing:-1.2px}
+body .workspace-actions {gap:10px}
+body .workspace-footer {margin:14px 48px 0;padding:24px 0;letter-spacing:.3px}
+body .page-content {max-width:none;padding:4px 48px 28px}
+body .surface-card,body .surface-raised,body .work-bucket,body .setup-card {background:white;border:0;border-radius:16px;box-shadow:var(--shadow-panel)}
+body .surface-raised {box-shadow:0 0 0 1px #20382412,0 18px 60px #20382414}
+body .surface-inset {border-radius:10px}
+body .hero-ink,body .sidebar-ink {background:#274b3d}
+body .btn-primary,body .btn-soft,body .btn-success {min-height:42px;border-radius:8px}
+body .btn-primary,body .btn-success {background:var(--accent);color:white;border:1px solid #20533f;box-shadow:0 2px 3px #183e2e12}
+body .btn-primary:hover:not(:disabled),body .btn-success:hover:not(:disabled) {background:#194a39}
+body .btn-soft {color:#465b4d;border-color:var(--border)}
+body .btn-soft:hover:not(:disabled) {background:#edf2e8;color:#244b3b;border-color:#a9b7a1}
+body .input-field {border-radius:8px}
+body .priority-p1 {background:#faeee8;color:#a54126;border-color:#eed6c9}
+body .priority-p2 {background:#fcf4df;color:#8e6518;border-color:#eddfb6}
+body .priority-p3 {background:#eef1ec;color:#4f6455;border-color:#dbe3d7}
+body .priority-p4 {background:#eaf4ec;color:#34704c;border-color:#d6e8d8}
+body .priority-rail-p1 {background:#bf7156}
+body .priority-rail-p2 {background:#c5a15a}
+body .priority-rail-p3 {background:#819580}
+body .priority-rail-p4 {background:#70a385}
+body .command-hero {grid-template-columns:1.2fr 1fr;gap:60px;padding:40px 44px;background:#e9efdf;border:0;border-radius:20px;color:#283e30}
+body .hero-eyebrow {letter-spacing:1.7px;color:#4c6954}
+body .command-hero h2 {font-family:Georgia,"Times New Roman",serif;font-size:clamp(32px,3.6vw,52px);font-weight:400;letter-spacing:-2px;line-height:1.06}
+body .command-hero p {margin-top:17px;color:#5a6c5c;max-width:420px}
+body .hero-actions {align-items:center}
+body .hero-secondary {min-height:42px;padding:0 12px;border:0;border-radius:8px;color:#355940}
+body .hero-secondary:hover {background:#d9e5cd}
+.workload-summary {background:#fafbf5;border-radius:14px;padding:30px;box-shadow:0 8px 28px #30432906}
+.workload-number {display:flex;align-items:baseline;gap:14px;margin-top:20px;font-size:68px;letter-spacing:-4px;line-height:1;font-weight:400}
+.workload-number span {font-size:13px;color:var(--ink-muted);letter-spacing:0}
+.workload-track {height:8px;border-radius:4px;background:#dce6d4;overflow:hidden;margin:26px 0 14px}
+.workload-track>span {display:block;height:100%;background:#b77d55}
+.workload-detail,.workload-detail>span,.workload-detail a {display:flex;align-items:center;gap:7px;font-size:11px}
+.workload-detail {justify-content:space-between;flex-wrap:wrap}
+.workload-detail i {width:7px;height:7px;background:#b77d55;border-radius:50%}
+body .command-hero .workload-summary p {padding-top:16px;border-top:1px solid var(--border);font-size:11px}
+body .metric-card {gap:23px;padding:24px;border:0;border-radius:12px;box-shadow:var(--shadow-panel)}
+body .metric-label {font-size:12px}
+body .metric-value {font-size:36px;font-weight:450;letter-spacing:-1.8px}
+body .metric-marker {top:26px;right:24px;width:7px;height:7px;border:1px solid #688060;border-radius:50%;background:#d8e6cf}
+body .queue-intro {padding:8px 0 12px}
+body .queue-intro h2 {font-family:Georgia,serif;font-size:30px;font-weight:400}
+body .setup-card {gap:40px;padding:30px}
+body .setup-card-heading h2 {font-size:17px}
+body .setup-card-heading p {font-size:13px}
+body .ticket-row {gap:15px;padding:20px 17px;border-radius:10px}
+body .ticket-row:hover {background:#f8faf4;border-color:#a4b399;box-shadow:none}
+body .ticket-row h3 {font-size:14px;font-weight:550}
+body .ticket-row-meta {margin-top:12px}
+body .ticket-row-arrow {color:#90a089}
+body .work-bucket {padding:24px}
+body .work-bucket-header {margin-bottom:22px}
+body .work-bucket-header h2 {font-size:16px}
+body .bucket-count {min-width:28px;height:28px;background:var(--accent-soft);color:var(--accent);border:0;border-radius:50%}
+.login-layout {min-height:100vh;display:grid;grid-template-columns:1.1fr 1fr}
+.login-story {display:flex;flex-direction:column;justify-content:center;padding:10%;background:#e5edda}
+.login-story h2 {margin-top:48px;font-family:Georgia,serif;font-size:clamp(42px,5.5vw,80px);font-weight:400;letter-spacing:-3px;line-height:1.1}
+.login-story h2 em {font-weight:400;color:var(--accent)}
+.login-story>p {margin-top:24px;max-width:370px;font-size:15px;line-height:1.8;color:#596b5b}
+.login-principles {display:grid;gap:18px;margin-top:56px;color:#48634e;font-size:12px}
+.login-story small {margin-top:70px;font-size:10px;letter-spacing:1px}
+.login-form-panel {width:100%;max-width:450px;align-self:center;justify-self:center;padding:40px}
+.login-form-panel input {background:white}
+.login-form-panel button {min-height:46px}
+@media(min-width:1024px) and (max-width:1250px) {
+ body .workspace-sidebar {gap:20px;padding-inline:24px}
+ body .nav-link {padding-inline:9px;font-size:11px}
+ .workspace-review-link {display:none}
+}
+@media(max-width:1023px) {
+ body .workspace-sidebar {min-height:72px;padding-inline:24px;justify-content:space-between}
+ body .sidebar-navigation {display:none}
+ body .workspace-body {padding-bottom:85px}
+ body .workspace-header {padding:20px 28px 26px}
+ body .page-content {padding:0 28px 24px}
+ body .workspace-footer {margin-inline:28px}
+ body .command-hero {gap:24px;padding:30px}
+ .workload-summary {padding:22px}
+ body .setup-card {grid-template-columns:1fr;gap:24px}
+ body .mobile-navigation {background:#fffffff5;backdrop-filter:blur(12px)}
+ body .mobile-brand {display:none}
+}
+@media(max-width:639px) {
+ body .workspace-sidebar {padding-inline:18px}
+ .workspace-review-link {font-size:10px}
+ body .workspace-header {padding:14px 18px 24px}
+ body .workspace-toolbar h1 {font-size:28px}
+ body .page-content {padding:0 16px 24px}
+ body .command-hero {grid-template-columns:1fr;padding:26px;gap:28px}
+ body .command-hero h2 {font-size:40px}
+ .workload-number {font-size:52px}
+ body .metric-card {padding:20px;gap:24px}
+ body .metric-marker {right:18px;top:25px}
+ body .metric-label {font-size:11px}
+ body .metric-value {font-size:30px}
+ body .ticket-row {padding:16px 12px;gap:10px}
+ body .setup-card,body .work-bucket {padding:20px}
+ body .workspace-footer {margin-inline:18px}
+ .login-layout {grid-template-columns:1fr}
+ .login-story {padding:32px}
+ .login-story h2 {margin-top:24px;font-size:44px;letter-spacing:-2px}
+ .login-principles,.login-story small {display:none}
+ .login-form-panel {padding:36px 28px}
+}

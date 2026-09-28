@@ -791,13 +791,13 @@ export function HomeConsole({ initialData }: { initialData: DashboardData }) {
               {isLive ? "Your service workspace" : "Demo workspace"}
             </div>
             <h2>
-              Less noise.
+              Your team’s work.
               <br />
-              More resolved.
+              In perspective.
             </h2>
             <p>
-              A clear view of the work that matters. Triage incoming requests,
-              keep your team moving, and close the loop with confidence.
+              Start with what needs attention. Keep requests moving,
+              give your team clarity, and make every resolution count.
             </p>
             <div className="hero-actions">
               <Link
@@ -827,28 +827,12 @@ export function HomeConsole({ initialData }: { initialData: DashboardData }) {
             </div>
           </div>
 
-          <div className="workflow-preview" aria-label="Service workflow">
-            <div className="workflow-preview-label">
-              Every request. A clear path.
-            </div>
-            <div className="workflow-stage">
-              <span>01</span>
-              <div>
-                Triage & route<small>Jev classifies. Your rules assign.</small>
-              </div>
-            </div>
-            <div className="workflow-stage">
-              <span>02</span>
-              <div>
-                Resolve & document<small>Technicians take the lead.</small>
-              </div>
-            </div>
-            <div className="workflow-stage">
-              <span>03</span>
-              <div>
-                Review & improve<small>Evidence informs the next step.</small>
-              </div>
-            </div>
+          <div className="workload-summary" aria-label="Current workload">
+            <span className="section-kicker">THE WORK AHEAD</span>
+            <div className="workload-number">{data.ticketCounts.active}<span>open tickets</span></div>
+            <div className="workload-track" aria-hidden="true"><span style={{ width: `${data.ticketCounts.active ? Math.min(100, data.ticketCounts.urgent / data.ticketCounts.active * 100) : 0}%` }} /></div>
+            <div className="workload-detail"><span><i />{data.ticketCounts.urgent} high priority</span><Link href="/tickets">View queue <ArrowUpRight size={15} /></Link></div>
+            <p>{data.ticketCounts.breached > 0 ? `${data.ticketCounts.breached} overdue SLA${data.ticketCounts.breached === 1 ? " needs" : "s need"} attention.` : "No overdue SLAs in the current workload."}</p>
           </div>
         </section>
 

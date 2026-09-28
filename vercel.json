@@ -11,6 +11,14 @@
     {
       "path": "/api/jobs/jev-assessments",
       "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/jobs/provider-writebacks",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/jobs/workflow-notifications",
+      "schedule": "*/5 * * * *"
     }
   ]
 }

@@ -30,6 +30,9 @@ import type { FormEvent, ReactNode, RefObject } from "react";
 import { HelpdeskShell } from "@/components/helpdesk-shell";
 import { SyncroIntegrationCard } from "@/components/syncro-integration-card";
 import { ReadinessCard } from "@/components/readiness-card";
+import { OperationsPanel } from "@/components/operations-panel";
+import { RoutingPolicyPanel } from "@/components/routing-policy-panel";
+import { DirectoryAdminPanel } from "@/components/directory-admin-panel";
 import type { ShellSection } from "@/components/helpdesk-shell";
 import { useDialogFocus } from "@/components/use-dialog-focus";
 import {
@@ -1730,7 +1733,7 @@ export function TicketDetailConsole({
                 <SelectField
                   labelText="Priority"
                   value={ticket.priority}
-                  disabled={isPending || !canMutate}
+                  disabled={isPending || !canMutate || isMirroredTicket}
                   onChange={(value) =>
                     runMutation(async () => {
                       await patchTicket(ticket.id, {
@@ -1750,7 +1753,7 @@ export function TicketDetailConsole({
                 <SelectField
                   labelText="Team"
                   value={ticket.assignedTeamId ?? ""}
-                  disabled={isPending || !canMutate}
+                  disabled={isPending || !canMutate || isMirroredTicket}
                   onChange={(value) =>
                     runMutation(async () => {
                       await patchTicket(ticket.id, {
@@ -1772,7 +1775,7 @@ export function TicketDetailConsole({
                 <SelectField
                   labelText="Owner"
                   value={ticket.assignedUserId ?? ""}
-                  disabled={isPending || !canMutate}
+                  disabled={isPending || !canMutate || isMirroredTicket}
                   onChange={(value) =>
                     runMutation(async () => {
                       await patchTicket(ticket.id, {
@@ -1790,6 +1793,7 @@ export function TicketDetailConsole({
                     </option>
                   ))}
                 </SelectField>
+                {isMirroredTicket && <p className="text-xs leading-relaxed text-ink-muted">Edit ticket status and ownership in {sourceProvider}. Managers can approve Jev routing proposals in Settings → Operations. Notes added here remain workspace-only.</p>}
               </div>
             </section>
 
@@ -2547,6 +2551,9 @@ export function SettingsConsole({
         </SetupCard>
 
         <ReadinessCard />
+        <OperationsPanel />
+        <RoutingPolicyPanel />
+        <DirectoryAdminPanel />
         <SyncroIntegrationCard />
 
         <SetupCard

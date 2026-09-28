@@ -237,5 +237,7 @@ export type ManagerQualityData = {
     evidenceCoverage: number | null;
   };
   rows: ManagerQualityRow[];
+  examples?: { ticketId: string; ticketTitle: string; technician: string | null; issueType: string | null;
+    status: string; overallScore: number | null; missingEvidence: number; completedAt: string | null }[];
   dbError?: string;
 };

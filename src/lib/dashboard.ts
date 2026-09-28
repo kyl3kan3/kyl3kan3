@@ -1,5 +1,7 @@
 import { getSql, hasDatabaseUrl } from "./db";
+import { assertDemoModeAllowed, DatabaseUnavailableError } from "./runtime-mode";
 import { ensureRepairShoprWorkflowSchema } from "./repairshopr-workflow";
+import { ensureSyncroWorkflowSchema } from "./syncro-workflow";
 import { ensureSyncroSchema, getSyncroStatus } from "./syncro";
 import { getDemoDashboardData } from "./demo-store";
 import { getJevIntegrationStatus } from "./jev-assessments";
@@ -49,6 +51,7 @@ type TicketRow = {
   team: string | null;
   reporter_email: string | null;
   sla_due_at: string | null;
+  response_due_at?: string | null;
   created_at: string;
   updated_at: string;
   created_from: string;
@@ -56,6 +59,7 @@ type TicketRow = {
   syncro_status: string | null;
   repairshopr_url: string | null;
   repairshopr_evidence?: unknown;
+  syncro_evidence?: unknown;
   repairshopr_status: string | null;
   repairshopr_customer_name: string | null;
   duplicate_count: number | string | null;
@@ -243,12 +247,12 @@ function mapTicketRow(
     repairshoprUrl: ticket.repairshopr_url,
     repairshoprStatus: ticket.repairshopr_status,
     duplicateCount: toNumber(ticket.duplicate_count),
-    comments: [...comments, ...(Array.isArray(ticket.repairshopr_evidence) ? ticket.repairshopr_evidence.flatMap((value, index): TicketComment[] => {
+    comments: [...comments, ...([...(Array.isArray(ticket.repairshopr_evidence) ? ticket.repairshopr_evidence : []), ...(Array.isArray(ticket.syncro_evidence) ? ticket.syncro_evidence : [])].flatMap((value, index): TicketComment[] => {
       const entry = asRecord(value);
       if (!entry || typeof entry.at !== "string" || typeof entry.evidence !== "string") return [];
-      return [{id:`repairshopr-${ticket.id}-${index}`,ticketId:ticket.id,authorEmail:typeof entry.actor === "string" ? entry.actor : "RepairShopr",
+      return [{id:`${ticket.created_from}-${ticket.id}-${index}`,ticketId:ticket.id,authorEmail:typeof entry.actor === "string" ? entry.actor : ticket.created_from,
         body:`[${String(entry.action ?? "Source note")}]\n${entry.evidence}`,createdAt:entry.at,createdVia:"system"}];
-    }) : [])].sort((a,b)=>new Date(a.createdAt).getTime()-new Date(b.createdAt).getTime()),
+    }))].sort((a,b)=>new Date(a.createdAt).getTime()-new Date(b.createdAt).getTime()),
     intakeAssessment: hasIntakeAssessment
       ? {
           status: assessmentStatus(ticket.intake_assessment_status),
@@ -271,9 +275,7 @@ function mapTicketRow(
                 | string
                 | null,
             ) ?? nullableNumber(ticket.triage_confidence),
-          needsHumanTriage: Boolean(
-            intakeAssessment?.needsHumanTriage ?? ticket.triage_needs_human,
-          ),
+          needsHumanTriage: Boolean(ticket.triage_needs_human),
           model: ticket.intake_model ?? null,
           assessedAt: ticket.intake_completed_at ?? null,
         }
@@ -289,7 +291,7 @@ function mapTicketRow(
           assignedTeam: ticket.team,
           assignedUserId: ticket.assigned_user_id,
           assignedUser: ticket.assignee,
-          responseDueAt: ticket.sla_due_at,
+          responseDueAt: ticket.response_due_at ?? (["repairshopr", "syncro"].includes(ticket.created_from) ? null : ticket.sla_due_at),
           needsHumanTriage: Boolean(ticket.triage_needs_human),
           ruleVersion:
             typeof routing?.ruleVersion === "string"
@@ -340,6 +342,7 @@ export async function getDashboardData(
   const ticketOffset = ticketId ? 0 : Math.max(0, requestedOffset);
 
   if (!hasDatabaseUrl()) {
+    assertDemoModeAllowed();
     const dashboard = getDemoDashboardData();
     const scopedTickets = dashboard.tickets.filter((ticket) => {
       if (ticketId) return ticket.id === ticketId;
@@ -370,6 +373,7 @@ export async function getDashboardData(
     const sql = getSql();
     await Promise.all([ensureRepairShoprSchema(), ensureSyncroSchema(), ensureJevSchema()]);
     await ensureRepairShoprWorkflowSchema();
+    await ensureSyncroWorkflowSchema();
 
     const [
       metricsRows,
@@ -447,6 +451,7 @@ export async function getDashboardData(
           coalesce(tm.name, 'Unrouted') as team,
           coalesce(rc.email, sc.email, t.reporter_email) as reporter_email,
           t.sla_due_at::text,
+          t.response_due_at::text,
           t.created_at::text,
           greatest(
             t.updated_at,
@@ -454,7 +459,7 @@ export async function getDashboardData(
           )::text as updated_at,
           t.created_from,
           t.syncro_url, t.syncro_status,
-          t.repairshopr_url, t.repairshopr_evidence,
+          t.repairshopr_url, t.repairshopr_evidence, t.syncro_evidence,
           t.repairshopr_status,
           coalesce(rc.name, sc.name) as repairshopr_customer_name,
           coalesce(count(ial.alert_event_id), 0)::int as duplicate_count,
@@ -533,12 +538,13 @@ export async function getDashboardData(
           tm.name,
           t.reporter_email,
           t.sla_due_at,
+          t.response_due_at,
           t.created_at,
           t.updated_at,
           t.repairshopr_updated_at,
           t.created_from,
           t.syncro_url, t.syncro_status,
-          t.repairshopr_url, t.repairshopr_evidence,
+          t.repairshopr_url, t.repairshopr_evidence, t.syncro_evidence,
           t.repairshopr_status,
           rc.name,
           rc.email,
@@ -596,6 +602,7 @@ export async function getDashboardData(
             coalesce(tm.name, 'Unrouted') as team,
             coalesce(rc.email, sc.email, t.reporter_email) as reporter_email,
             t.sla_due_at::text,
+            t.response_due_at::text,
             t.created_at::text,
             greatest(
               t.updated_at,
@@ -607,7 +614,7 @@ export async function getDashboardData(
             ) as updated_at_sort,
             t.created_from,
             t.syncro_url, t.syncro_status,
-          t.repairshopr_url, t.repairshopr_evidence,
+          t.repairshopr_url, t.repairshopr_evidence, t.syncro_evidence,
             t.repairshopr_status,
             coalesce(rc.name, sc.name) as repairshopr_customer_name,
             0::int as duplicate_count
@@ -938,9 +945,7 @@ export async function getDashboardData(
       })),
     };
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Unknown database error";
-
-    return getDemoDashboardData(message);
+    // Never disguise a broken configured database as a successful demo response.
+    throw new DatabaseUnavailableError(undefined, { cause: error });
   }
 }

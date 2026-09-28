@@ -6,6 +6,7 @@ import {
 } from "@/lib/syncro";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 300;
 
 async function handleSync(request: Request) {
   if (!isSyncroRequestAuthorized(request)) {

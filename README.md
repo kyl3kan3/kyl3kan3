@@ -4,7 +4,7 @@ A Vercel + Neon incident triage console built from the MVP blueprint in `BLUEPRI
 
 ## RepairShopr and Syncro integrations
 
-Both providers support independent, import-only customer and ticket mirrors. Source IDs, customer records, sync locks, cursors, and run history are kept separate, so matching external ticket numbers do not collide. Incoming imports enqueue Jev triage; completion transitions enqueue evidence-based review. Ticket status must be changed in the original system, not in this console.
+Both providers support independent customer, ticket, technician, and paginated comment-history imports. Source IDs, customer records, sync locks, cursors, and run history are kept separate, so matching external ticket numbers do not collide. Incoming imports enqueue Jev triage; completion transitions enqueue evidence-based review. Ticket lifecycle and customer communication remain in the source system. Optional approval-first write-back can update source priority and technician; it is disabled by default.
 
 Configure each account in server environment variables (never paste API keys into client code):
 
@@ -13,17 +13,21 @@ Configure each account in server environment variables (never paste API keys int
 | RepairShopr | `REPAIRSHOPR_SUBDOMAIN`, `REPAIRSHOPR_API_KEY` | `REPAIRSHOPR_SYNC_SECRET` |
 | Syncro | `SYNCRO_SUBDOMAIN`, `SYNCRO_API_KEY` | `SYNCRO_SYNC_SECRET` |
 
-RepairShopr needs account-wide customer read, Tickets - List/Search, Tickets - View Details (including comments), and user read access. A key scoped to only one technician's tickets cannot produce company-wide reports. In Settings, enter the corresponding **sync secret**, test the connection, then run the initial sync. API keys remain server-side. Protected endpoints live under `/api/integrations/repairshopr` and `/api/integrations/syncro`: `GET /status`, `POST /test`, and `GET` or `POST /sync`. Manual requests accept the matching `x-repairshopr-sync-secret` or `x-syncro-sync-secret` header. Scheduled requests use `Authorization: Bearer <CRON_SECRET>`.
+Both providers need account-wide customer read, Tickets - List/Search, Tickets - View Details (including comments), and user read access. A key scoped to only one technician's tickets cannot produce company-wide reports. In Settings → Operations, use the manager session to test a connection and import the next batch—no job secret needs to be entered in the browser. API keys remain server-side. Protected integration endpoints still accept the matching `x-repairshopr-sync-secret` or `x-syncro-sync-secret` for automation. Scheduled requests use `Authorization: Bearer <CRON_SECRET>`.
 
-`vercel.json` schedules both mirrors and the Jev job processor every five minutes (Vercel Pro). RepairShopr uses a durable page checkpoint and ticket queue, importing up to 25 ticket details per run within a 200-second processing budget. Failed items remain queued for retry; committed ticket data and status events are atomic. Customer backfill does not block ticket discovery. Calls are paced below the provider's rate limit. Initial backfills require multiple runs, not one instantaneous import. Syncro retains its separate `SYNCRO_MAX_PAGES` limit. Runtime schema initialization is automatic; explicit migrations are in `db/syncro.sql` and `db/repairshopr-workflow.sql`.
+`vercel.json` schedules both mirrors, Jev processing, approved write-backs, and in-app operational alerts every five minutes. Both imports use durable checkpoints and retry queues, importing bounded batches within a time budget. Customer backfill does not block ticket discovery. Initial backfills require multiple runs. Jev drains up to 100 jobs within a 210-second budget; Operations shows backlog age, failures, and retry controls. Runtime schema initialization is automatic; additive migrations are in `db/`.
 
-RepairShopr imports paginated plaintext comment history and distinguishes customer-facing technician replies from internal or unattributed notes. Stable RepairShopr user IDs map to separate local technician records without importing admin privileges. On observed completion, the source assignee is snapshotted for reporting; this indicates ticket ownership, not proof that one person authored all work. Historical completed tickets are reviewed but remain unattributed rather than guessing their past owner. Reopenings create new completion cycles. Missing evidence is not scored as failure. Attachments, worksheet contents, and actions never recorded in comments are not assumed to exist. Syncro remains summary-only. Neither integration writes back to the source system.
+Both providers import paginated plaintext comments and distinguish customer-facing technician replies from internal or unattributed notes. Stable provider user IDs map to local technician records without importing admin privileges. On observed completion, the source assignee is snapshotted; this indicates ownership, not authorship of every action. Historical completed tickets remain unattributed. Reopenings create new cycles; each review sees only history within that cycle through completion. Missing evidence is not scored as failure. Attachments, worksheets, and undocumented actions are not assumed to exist.
+
+Source write-back requires `REPAIRSHOPR_WRITEBACK_ENABLED=true` or `SYNCRO_WRITEBACK_ENABLED=true`, a JSON `*_WRITEBACK_PRIORITY_MAP` mapping P1–P4 to exact account priority values, Tickets–Edit permission, and a manager password of at least 16 characters in production. No priority labels are guessed. Managers approve proposals in Operations; `*_WRITEBACK_AUTO_APPROVE=true` is an additional explicit opt-in. Account binding, source-version checks, durable retries, and read-after-write verification protect changes. Conflicts are never rebased blindly: reimport, request fresh triage, and approve the new proposal. Neither API documents conditional writes, so a concurrent edit between preflight GET and PUT remains a residual risk. Team queues and workspace response deadlines are not exported; provider `due_date` means a completion deadline.
+
+Managers can configure ordered first-match routing rules in Settings, edit technician directory roles/membership/availability, inspect Jev failures and write-back approvals, and acknowledge in-app alerts for missed response deadlines, source completion deadlines, unassigned tickets, and human triage. Alerts never change employee scores or send outbound messages. Quality includes recent review examples linked to ticket evidence; response metrics require an evidenced customer-facing staff message. See [launch checklist](docs/LAUNCH.md).
 
 ### Activate RepairShopr
 
 1. Add `REPAIRSHOPR_SUBDOMAIN` and `REPAIRSHOPR_API_KEY` to the Vercel project's Production environment; redeploy so the functions receive them.
 2. Sign in as the manager and open Settings → Production readiness → Test live connections. This checks Jev with a synthetic sample and checks RepairShopr permissions, including a sample ticket's detail/comments/user when available.
-3. Run Sync now with the provisioned sync secret, or wait for the scheduled job. Check pending/failed imports in Production readiness. Jobs safely skip unconfigured providers.
+3. Use Import next batch in Operations or wait for the scheduled job. Check outstanding imports and assessment jobs. Jobs safely skip unconfigured providers.
 4. Complete a test ticket in RepairShopr with explicit diagnosis, actions, verification results, and customer next steps. After import and assessment, inspect the source notes, completion review, and manager report. Actual-account permissions and payloads still require this acceptance test.
 
 `scripts/provision-production.mjs` provisions missing app/manager/job secrets for the linked project without overwriting existing credentials. Generated secrets are saved outside Git in the current user's `.codex/private/kyl3kan3-production.json`. Never commit or share this file publicly. The readiness API is manager-protected and never returns secrets.
@@ -49,7 +53,7 @@ npm run dev
 
 Apply `db/schema.sql` to a Neon database, then set `DATABASE_URL` in `.env.local` and in Vercel project environment variables.
 
-The app is build-safe without `DATABASE_URL`; it falls back to demo data until Neon is configured.
+The app is build-safe without `DATABASE_URL`. Local development can use demo data; production and Vercel deployments fail closed if the database is missing or unavailable. They never substitute sample employee metrics or accept in-memory writes.
 
 `INBOUND_WEBHOOK_SECRET` is optional during development. When set, inbound webhook calls must include either `Authorization: Bearer <secret>` or `x-webhook-secret: <secret>`.
 
@@ -75,7 +79,7 @@ Ticket text is sent to TypeSafe for Jev assessment. The integration removes comm
 
 - Live Neon-backed dashboard metrics, ticket queue, team load, and incident stream.
 - Manual ticket intake with priority, team, owner, reporter, and description fields.
-- Ticket status, priority, team, and owner updates from the console.
+- Native ticket status, priority, team, and owner updates with atomic lifecycle/audit writes; source-owned tickets use the original provider or the approved routing queue.
 - Ticket comments and timeline refresh.
 - Inbound alert webhook that normalizes alert/email payloads, asks Jev for issue type, urgency, and suggested team, deduplicates incidents, and records assessment plus audit metadata.
 - Local routing rules that turn Jev classification into queue, priority, owner, and response deadline; low-confidence or unavailable assessments remain in human triage.
@@ -83,7 +87,8 @@ Ticket text is sent to TypeSafe for Jev assessment. The integration removes comm
 - Versioned, issue-type-specific company completion procedures supplied through server configuration and snapshotted with every review.
 - A manager quality view that calculates response time, handled tickets, reopened tickets, evidence coverage, and evidence-scored quality for comparable technician role and issue-type cohorts.
 - Provider-aware inbound intake for Resend, Postmark, SendGrid, Mailgun-style payloads, with routing into `alert_email` or `client_email` tickets based on recipients and content.
-- RepairShopr ticket/customer mirror that pulls from RepairShopr into Neon for triage, dashboard, and archive views.
+- RepairShopr and Syncro imports with complete comment histories, account-isolated retries, and optional approval-first routing write-back.
+- Manager recovery, configurable routing policies, directory administration, and durable in-app operational alerts.
 
 ## API
 
@@ -96,6 +101,10 @@ Ticket text is sent to TypeSafe for Jev assessment. The integration removes comm
 - `POST /api/tickets/:id/comments`
 - `POST /api/webhooks/inbound-email`
 - `GET|POST /api/jobs/jev-assessments`
+- `GET|POST /api/jobs/provider-writebacks`
+- `GET|POST /api/jobs/workflow-notifications`
+- `GET|POST /api/operations` (manager session, same-origin mutations)
+- `GET|POST|PUT|PATCH|DELETE /api/routing-rules` (manager)
 - `GET /api/integrations/repairshopr/status`
 - `POST /api/integrations/repairshopr/test`
 - `POST /api/integrations/repairshopr/sync`

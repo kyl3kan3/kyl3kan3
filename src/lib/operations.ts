@@ -7,6 +7,7 @@ import {
   updateDemoTicket,
 } from "./demo-store";
 import { getSql, hasDatabaseUrl } from "./db";
+import { assertDemoModeAllowed } from "./runtime-mode";
 import {
   createCompletionAssessment,
   enqueueTicketTriage,
@@ -29,7 +30,13 @@ const statuses: TicketStatus[] = [
 
 type IdRow = { id: string };
 type TicketIdRow = { id: string; ticket_number: string };
-type CompletionCycleRow = { completion_cycle: number | string };
+type TicketUpdateRow = {
+  id: string;
+  org_id: string;
+  completion_cycle: number | string;
+  should_review: boolean;
+  assigned_user_id: string | null;
+};
 type TicketLookupRow = {
   id: string;
   org_id: string;
@@ -180,7 +187,7 @@ async function writeAudit(
       'ticket',
       ${entityId},
       ${action},
-      ${JSON.stringify(metadata)}::jsonb
+      ${JSON.stringify({ ...metadata, actor: "shared_workspace_session" })}::jsonb
     )
   `;
 }
@@ -270,6 +277,7 @@ export function parseCreateUserInput(payload: Record<string, unknown>) {
 
 export async function createTeam(input: CreateTeamInput) {
   if (!hasDatabaseUrl()) {
+    assertDemoModeAllowed();
     return createDemoTeam(input);
   }
 
@@ -287,6 +295,7 @@ export async function createTeam(input: CreateTeamInput) {
 
 export async function createUser(input: CreateUserInput) {
   if (!hasDatabaseUrl()) {
+    assertDemoModeAllowed();
     return createDemoUser(input);
   }
 
@@ -318,6 +327,7 @@ export async function createUser(input: CreateUserInput) {
 
 export async function createTicket(input: CreateTicketInput) {
   if (!hasDatabaseUrl()) {
+    assertDemoModeAllowed();
     return createDemoTicket(input);
   }
 
@@ -371,6 +381,7 @@ export async function createTicket(input: CreateTicketInput) {
       assigned_team_id,
       assigned_user_id,
       sla_due_at,
+      response_due_at,
       reporter_email,
       created_from
     )
@@ -386,6 +397,7 @@ export async function createTicket(input: CreateTicketInput) {
       ${input.assignedTeamId ?? null},
       ${input.assignedUserId ?? null},
       now() + (${slaMinutes(priority)} || ' minutes')::interval,
+      now() + (${slaMinutes(priority)} || ' minutes')::interval,
       ${input.reporterEmail ?? null},
       ${input.createdFrom ?? "manual"}
     )
@@ -397,7 +409,7 @@ export async function createTicket(input: CreateTicketInput) {
   if (input.comment) {
     await addTicketComment(ticket.id, {
       body: input.comment,
-      authorEmail: input.reporterEmail || "operator@example.com",
+      authorEmail: input.reporterEmail || "shared-workspace@session.invalid",
       countsAsResponse: false,
       createdVia: "system",
     });
@@ -455,6 +467,7 @@ export async function createTicket(input: CreateTicketInput) {
 
 export async function updateTicket(ticketId: string, input: UpdateTicketInput) {
   if (!hasDatabaseUrl()) {
+    assertDemoModeAllowed();
     return updateDemoTicket(ticketId, input);
   }
 
@@ -466,192 +479,111 @@ export async function updateTicket(ticketId: string, input: UpdateTicketInput) {
     throw new Error("Ticket not found");
   }
 
-  if (input.status && input.status !== current.status && ["repairshopr", "syncro"].includes(current.created_from)) {
-    throw new Error("Mirrored ticket status must be updated in its source system");
+  const mirrored = ["repairshopr", "syncro"].includes(current.created_from);
+  if (mirrored && (
+    (input.status !== undefined && input.status !== current.status) ||
+    (input.priority !== undefined && input.priority !== current.priority) ||
+    (input.assignedTeamId !== undefined && input.assignedTeamId !== current.assigned_team_id) ||
+    (input.assignedUserId !== undefined && input.assignedUserId !== current.assigned_user_id)
+  )) {
+    throw new Error("Mirrored ticket status, priority, and assignment must be updated in its source system or an explicit writeback workflow");
   }
+  if (input.title !== undefined && !input.title) throw new Error("Ticket title cannot be blank");
 
-  if (input.title !== undefined) {
-    if (!input.title) throw new Error("Ticket title cannot be blank");
-    await sql`update tickets set title = ${input.title} where id = ${ticketId}`;
-  }
+  const assignmentRequested = input.assignedTeamId !== undefined || input.assignedUserId !== undefined;
+  const scores = priorityScores(input.priority ?? current.priority);
+  const comment = cleanString(input.comment);
+  // The row lock is acquired before deriving the transition. Counters, evidence,
+  // status history, incident state, and audit either commit together or not at all.
+  const rows = (await sql`
+    with locked as materialized (
+      select * from tickets where id = ${ticketId} for update
+    ), proposed as (
+      select locked.*,
+        coalesce(${mirrored ? null : input.status ?? null}::text, status) as requested_status,
+        case when ${!mirrored && input.assignedTeamId !== undefined}
+          then ${input.assignedTeamId ?? null}::uuid else assigned_team_id end as next_team,
+        case when ${!mirrored && input.assignedUserId !== undefined}
+          then ${input.assignedUserId ?? null}::uuid else assigned_user_id end as next_user
+      from locked
+    ), planned as (
+      select proposed.*,
+        case when ${assignmentRequested} and (next_team is not null or next_user is not null)
+          and requested_status in ('new','triaged') and not ${mirrored}
+          then 'assigned' else requested_status end as next_status
+      from proposed
+    ), transition as (
+      select planned.*,
+        status not in ('resolved','closed') and next_status in ('resolved','closed') as should_review,
+        status in ('resolved','closed') and next_status not in ('resolved','closed') as reopening
+      from planned
+    ), changed as (
+      update tickets t set
+        title = case when ${input.title !== undefined} then ${input.title ?? null} else t.title end,
+        description = case when ${input.description !== undefined} then ${input.description ?? null} else t.description end,
+        status = transition.next_status,
+        priority = coalesce(${mirrored ? null : input.priority ?? null}::text, t.priority),
+        importance_score = case when ${!mirrored && input.priority !== undefined} then ${scores.importanceScore} else t.importance_score end,
+        urgency_score = case when ${!mirrored && input.priority !== undefined} then ${scores.urgencyScore} else t.urgency_score end,
+        assigned_team_id = transition.next_team,
+        assigned_user_id = transition.next_user,
+        triage_needs_human = case when ${assignmentRequested}
+          and (transition.next_team is not null or transition.next_user is not null)
+          then false else t.triage_needs_human end,
+        completion_cycle = t.completion_cycle + case when transition.should_review then 1 else 0 end,
+        reopened_count = t.reopened_count + case when transition.reopening then 1 else 0 end,
+        resolved_at = case when transition.should_review then now()
+          when transition.reopening then null else t.resolved_at end,
+        sla_due_at = case when ${!mirrored && input.priority !== undefined}
+          and (t.priority is distinct from ${input.priority ?? null}::text or t.sla_due_at is null)
+          then least(t.sla_due_at, t.created_at + (${slaMinutes(input.priority ?? current.priority)} || ' minutes')::interval)
+          else t.sla_due_at end,
+        response_due_at = case when ${!mirrored && input.priority !== undefined}
+          then least(t.response_due_at, t.created_at + (${slaMinutes(input.priority ?? current.priority)} || ' minutes')::interval)
+          else t.response_due_at end,
+        updated_at = now()
+      from transition where t.id = transition.id
+      returning t.id, t.org_id, t.incident_id, t.status, t.priority, t.importance_score,
+        t.urgency_score, t.assigned_user_id, t.completion_cycle,
+        transition.status as previous_status, transition.should_review, transition.reopening
+    ), status_event as (
+      insert into ticket_status_events (org_id, ticket_id, from_status, to_status, completion_cycle, source, metadata)
+      select org_id, id, previous_status, status, completion_cycle, 'ui',
+        jsonb_build_object('completionReviewQueued', should_review, 'reopened', reopening,
+          'humanRoutingCompleted', ${assignmentRequested}::boolean,
+          'resolutionSummary', ${input.resolutionSummary ?? null}::text,
+          'customerNextSteps', ${input.customerNextSteps ?? null}::text,
+          'verificationEvidence', ${input.verificationEvidence ?? null}::text,
+          'technicianUserId', assigned_user_id)
+      from changed where status is distinct from previous_status
+    ), incident_update as (
+      update incidents i set
+        status = case when changed.status = 'closed' then 'closed'
+          when changed.status = 'resolved' then 'resolved' else 'open' end,
+        priority = changed.priority, importance_score = changed.importance_score,
+        urgency_score = changed.urgency_score, last_seen_at = now()
+      from changed where i.id = changed.incident_id
+        and (changed.status is distinct from changed.previous_status or ${input.priority !== undefined})
+    ), note as (
+      insert into ticket_comments (ticket_id, author_email, body, created_via)
+      select id, 'shared-workspace@session.invalid', ${comment}, 'ui' from changed where ${Boolean(comment)}
+    ), audit as (
+      insert into audit_logs (org_id, actor_type, entity_type, entity_id, action, metadata)
+      select org_id, 'system', 'ticket', id, 'ticket.updated', ${JSON.stringify({ ...input, actor: "shared_workspace_session" })}::jsonb from changed
+    )
+    select id::text, org_id::text, completion_cycle, should_review, assigned_user_id::text from changed
+  `) as TicketUpdateRow[];
+  const updated = rows[0];
+  if (!updated) throw new Error("Ticket not found");
 
-  if (input.description !== undefined) {
-    await sql`
-      update tickets
-      set description = ${input.description}
-      where id = ${ticketId}
-    `;
-  }
-
-  let completionCycle = numberValue(current.completion_cycle);
-  let shouldReviewCompletion = false;
-  let effectiveStatus = current.status;
-
-  if (input.status && input.status !== current.status) {
-    const wasComplete =
-      current.status === "resolved" || current.status === "closed";
-    const willBeComplete =
-      input.status === "resolved" || input.status === "closed";
-    shouldReviewCompletion = !wasComplete && willBeComplete;
-    const isReopening = wasComplete && !willBeComplete;
-
-    const rows = (await sql`
-      update tickets
-      set
-        status = ${input.status},
-        completion_cycle = completion_cycle + ${shouldReviewCompletion ? 1 : 0},
-        reopened_count = reopened_count + ${isReopening ? 1 : 0},
-        resolved_at = case
-          when ${shouldReviewCompletion} then now()
-          when ${isReopening} then null
-          else resolved_at
-        end,
-        first_response_at = case
-          when ${input.status === "in_progress"} then coalesce(first_response_at, now())
-          else first_response_at
-        end
-      where id = ${ticketId}
-      returning completion_cycle
-    `) as CompletionCycleRow[];
-    completionCycle = numberValue(rows[0]?.completion_cycle);
-    effectiveStatus = input.status;
-
-    await sql`
-      insert into ticket_status_events (
-        org_id,
-        ticket_id,
-        from_status,
-        to_status,
-        completion_cycle,
-        source,
-        metadata
-      ) values (
-        ${current.org_id},
-        ${ticketId},
-        ${current.status},
-        ${input.status},
-        ${completionCycle},
-        'ui',
-        ${JSON.stringify({
-          completionReviewQueued: shouldReviewCompletion,
-          reopened: isReopening,
-          ...(shouldReviewCompletion
-            ? {
-                resolutionSummary: input.resolutionSummary ?? null,
-                customerNextSteps: input.customerNextSteps ?? null,
-                verificationEvidence: input.verificationEvidence ?? null,
-                technicianUserId: current.assigned_user_id,
-              }
-            : {}),
-        })}::jsonb
-      )
-    `;
-
-    if (current.incident_id) {
-      const incidentStatus =
-        input.status === "closed"
-          ? "closed"
-          : input.status === "resolved"
-            ? "resolved"
-            : "open";
-
-      await sql`
-        update incidents
-        set status = ${incidentStatus}, last_seen_at = now()
-        where id = ${current.incident_id}
-      `;
-    }
-  }
-
-  if (input.priority) {
-    const scores = priorityScores(input.priority);
-    await sql`
-      update tickets
-      set
-        priority = ${input.priority},
-        importance_score = ${scores.importanceScore},
-        urgency_score = ${scores.urgencyScore},
-        sla_due_at = coalesce(sla_due_at, now() + (${slaMinutes(input.priority)} || ' minutes')::interval)
-      where id = ${ticketId}
-    `;
-
-    if (current.incident_id) {
-      await sql`
-        update incidents
-        set
-          priority = ${input.priority},
-          importance_score = ${scores.importanceScore},
-          urgency_score = ${scores.urgencyScore},
-          last_seen_at = now()
-        where id = ${current.incident_id}
-      `;
-    }
-  }
-
-  if (input.assignedTeamId !== undefined || input.assignedUserId !== undefined) {
-    const assignedTeamId =
-      input.assignedTeamId === undefined
-        ? current.assigned_team_id
-        : input.assignedTeamId;
-    const assignedUserId =
-      input.assignedUserId === undefined
-        ? current.assigned_user_id
-        : input.assignedUserId;
-    const humanRouted = Boolean(assignedTeamId || assignedUserId);
-    const assignmentStatus =
-      humanRouted && ["new", "triaged"].includes(effectiveStatus)
-        ? "assigned"
-        : effectiveStatus;
-    await sql`
-      update tickets
-      set
-        assigned_team_id = ${assignedTeamId},
-        assigned_user_id = ${assignedUserId},
-        triage_needs_human = case
-          when ${humanRouted} then false
-          else triage_needs_human
-        end,
-        status = ${assignmentStatus}
-      where id = ${ticketId}
-    `;
-    if (assignmentStatus !== effectiveStatus) {
-      await sql`
-        insert into ticket_status_events (
-          org_id,
-          ticket_id,
-          from_status,
-          to_status,
-          completion_cycle,
-          source,
-          metadata
-        ) values (
-          ${current.org_id},
-          ${ticketId},
-          ${effectiveStatus},
-          ${assignmentStatus},
-          ${completionCycle},
-          'ui',
-          ${JSON.stringify({ humanRoutingCompleted: true })}::jsonb
-        )
-      `;
-    }
-  }
-
-  if (input.comment) {
-    await addTicketComment(ticketId, {
-      body: input.comment,
-      authorEmail: "operator@example.com",
-    });
-  }
-
-  await writeAudit(current.org_id, ticketId, "ticket.updated", input);
-
-  if (shouldReviewCompletion) {
+  if (updated.should_review) {
+    const completionCycle = numberValue(updated.completion_cycle);
     try {
       const assessmentId = await createCompletionAssessment({
-        orgId: current.org_id,
+        orgId: updated.org_id,
         ticketId,
         completionCycle,
+        technicianUserId: updated.assigned_user_id,
         resolutionSummary: input.resolutionSummary,
         customerNextSteps: input.customerNextSteps,
         verificationEvidence: input.verificationEvidence,
@@ -670,6 +602,7 @@ export async function updateTicket(ticketId: string, input: UpdateTicketInput) {
 
 export async function addTicketComment(ticketId: string, input: AddCommentInput) {
   if (!hasDatabaseUrl()) {
+    assertDemoModeAllowed();
     return addDemoTicketComment(ticketId, input);
   }
 
@@ -694,7 +627,7 @@ export async function addTicketComment(ticketId: string, input: AddCommentInput)
     )
     values (
       ${ticketId},
-      ${input.authorEmail || "operator@example.com"},
+      ${input.authorEmail || "shared-workspace@session.invalid"},
       ${body},
       ${input.createdVia ?? "ui"}
     )
@@ -706,7 +639,7 @@ export async function addTicketComment(ticketId: string, input: AddCommentInput)
     set
       updated_at = now(),
       first_response_at = case
-        when ${input.countsAsResponse !== false}
+        when ${input.countsAsResponse === true}
           then coalesce(first_response_at, now())
         else first_response_at
       end
@@ -715,7 +648,7 @@ export async function addTicketComment(ticketId: string, input: AddCommentInput)
 
   await writeAudit(current.org_id, ticketId, "ticket.commented", {
     commentId: rows[0].id,
-    authorEmail: input.authorEmail || "operator@example.com",
+    authorEmail: input.authorEmail || "shared-workspace@session.invalid",
   });
 
   return rows[0];

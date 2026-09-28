@@ -7,10 +7,10 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   if (!hasDatabaseUrl()) {
     return NextResponse.json({
-      ok: true,
+      ok: process.env.NODE_ENV !== "production" && process.env.VERCEL !== "1",
       database: "not_configured",
       jev: isJevConfigured() ? "configured" : "not_configured",
-    });
+    }, { status: process.env.NODE_ENV === "production" || process.env.VERCEL === "1" ? 503 : 200 });
   }
 
   try {
@@ -22,12 +22,12 @@ export async function GET() {
       database: "connected",
       jev: isJevConfigured() ? "configured" : "not_configured",
     });
-  } catch (error) {
+  } catch {
     return NextResponse.json(
       {
         ok: false,
         database: "error",
-        error: error instanceof Error ? error.message : "Unknown error",
+        error: "Database connection unavailable",
       },
       { status: 500 },
     );

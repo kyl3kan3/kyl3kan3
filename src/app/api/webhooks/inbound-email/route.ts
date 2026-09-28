@@ -1,4 +1,4 @@
-import { createHash, createHmac, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import {
   triageIncomingAlert,
@@ -8,6 +8,8 @@ import {
 import { getSql, hasDatabaseUrl } from "@/lib/db";
 import { getDemoDashboardData } from "@/lib/demo-store";
 import { persistCompletedTicketTriage } from "@/lib/jev-assessments";
+import { ensureJevSchema } from "@/lib/jev-schema";
+import { evaluateConfiguredRouting } from "@/lib/routing-policy";
 import { createTicket } from "@/lib/operations";
 import type { Priority } from "@/lib/types";
 
@@ -26,12 +28,6 @@ type NormalizedAlert = {
 };
 
 type IdRow = { id: string };
-type TicketIdRow = {
-  id: string;
-  ticket_number: string;
-  assigned_team_id: string | null;
-  assigned_user_id: string | null;
-};
 type TeamAssignmentRow = {
   id: string;
   name: string;
@@ -405,6 +401,7 @@ async function assignmentContext(orgId: string): Promise<AssignmentContext> {
       left join tickets t on t.assigned_user_id = u.id
       where u.org_id = ${orgId}
         and u.is_active
+        and u.role in ('agent','manager','admin')
       group by u.id, u.email, u.full_name
       order by open_tickets asc, u.full_name asc nulls last, u.email asc
     `,
@@ -629,9 +626,11 @@ function normalizeAlert(payload: Record<string, unknown>): NormalizedAlert {
       firstText(
         atPath(payload, ["data", "email_id"]),
         atPath(payload, ["data", "message_id"]),
+        payload.message_id,
         payload.messageId,
         payload.MessageID,
         payload["Message-Id"],
+        payload["Message-ID"],
         payload.id,
       ) || null,
     senderEmail:
@@ -997,292 +996,166 @@ export async function POST(request: Request) {
     returning id
   `) as IdRow[];
   const orgId = String(orgRows[0].id);
-  const context = await assignmentContext(orgId);
-  const decision = await triageIncomingAlert({
-    alert: parsedAlert,
-    rawPayload,
-    heuristicScore,
-    context,
-  });
-  const alert: NormalizedAlert = {
-    ...parsedAlert,
-    subject: decision.title,
-    bodyText: decision.summary,
-    service: decision.service,
-    severity: decision.severity,
-    createdFrom: decision.createdFrom,
-  };
-  const score = {
-    priority: decision.priority,
-    importanceScore: decision.importanceScore,
-    urgencyScore: decision.urgencyScore,
-  };
-  const alertFingerprint = fingerprint(alert, decision.dedupHint);
-
-  const alertRows = (await sql`
-    insert into alert_events (
-      org_id,
-      source,
-      external_id,
-      sender_email,
-      subject,
-      body_text,
-      raw_payload,
-      fingerprint
-    )
-    values (
-      ${orgId},
-      ${alert.source},
-      ${alert.externalId},
-      ${alert.senderEmail},
-      ${alert.subject},
-      ${alert.bodyText},
-      ${JSON.stringify(rawPayload)}::jsonb,
-      ${alertFingerprint}
-    )
-    returning id
-  `) as IdRow[];
-  const alertId = String(alertRows[0].id);
-
-  const existingIncidentRows = (await sql`
-    select id
-    from incidents
-    where org_id = ${orgId}
-      and dedup_key = ${alertFingerprint}
-      and status in ('open', 'monitoring')
-    order by last_seen_at desc
-    limit 1
-  `) as IdRow[];
-
-  let incidentId = existingIncidentRows[0]?.id
-    ? String(existingIncidentRows[0].id)
-    : null;
-
-  if (incidentId) {
-    await sql`
-      update incidents
-      set
-        last_seen_at = now(),
-        blast_count = blast_count + 1,
-        urgency_score = greatest(urgency_score, ${score.urgencyScore}),
-        importance_score = greatest(importance_score, ${score.importanceScore}),
-        priority = least(priority, ${score.priority})::text,
-        updated_at = now()
-      where id = ${incidentId}
-    `;
-  } else {
-    const incidentRows = (await sql`
-      insert into incidents (
-        org_id,
-        title,
-        status,
-        dedup_key,
-        importance_score,
-        urgency_score,
-        priority,
-        confidence,
-        first_seen_at,
-        last_seen_at,
-        blast_count
-      )
-      values (
-        ${orgId},
-        ${alert.subject},
-        'open',
-        ${alertFingerprint},
-        ${score.importanceScore},
-        ${score.urgencyScore},
-        ${score.priority},
-        0.82,
-        now(),
-        now(),
-        1
-      )
-      returning id
-    `) as IdRow[];
-    incidentId = String(incidentRows[0].id);
-  }
-
-  await sql`
-    insert into incident_alert_links (incident_id, alert_event_id)
-    values (${incidentId}, ${alertId})
-    on conflict do nothing
+  await ensureJevSchema();
+  // The separate receipt ledger does not alter or delete historical alert records.
+  await sql`create table if not exists inbound_webhook_receipts (
+    org_id uuid not null references orgs(id) on delete cascade,
+    source text not null, external_id text not null, claim_token uuid not null,
+    lease_until timestamptz not null, response jsonb, completed_at timestamptz,
+    created_at timestamptz not null default now(), primary key(org_id,source,external_id)
+  )`;
+  const externalId = parsedAlert.externalId || request.headers.get("svix-id") || randomUUID();
+  const claimToken = randomUUID();
+  const claims = await sql`
+    insert into inbound_webhook_receipts(org_id,source,external_id,claim_token,lease_until)
+    values (${orgId},${parsedAlert.source},${externalId},${claimToken},now()+interval '10 minutes')
+    on conflict(org_id,source,external_id) do update
+      set claim_token=excluded.claim_token,lease_until=excluded.lease_until
+      where inbound_webhook_receipts.completed_at is null and inbound_webhook_receipts.lease_until < now()
+    returning claim_token::text
   `;
-
-  const existingTicketRows = (await sql`
-    select
-      id,
-      ticket_number::text,
-      assigned_team_id::text,
-      assigned_user_id::text
-    from tickets
-    where incident_id = ${incidentId}
-      and status not in ('resolved', 'closed')
-    order by updated_at desc
-    limit 1
-  `) as TicketIdRow[];
-
-  const existingTicket = existingTicketRows[0] ?? null;
-  let ticketId = existingTicket?.id ? String(existingTicket.id) : null;
-  let ticketNumber = existingTicket?.ticket_number
-    ? String(existingTicket.ticket_number)
-    : null;
-  let reassignedExistingTicket = false;
-
-  if (ticketId) {
-    await sql`
-      update tickets
-      set
-        updated_at = now(),
-        priority = least(priority, ${score.priority})::text,
-        urgency_score = greatest(urgency_score, ${score.urgencyScore}),
-        importance_score = greatest(importance_score, ${score.importanceScore})
-      where id = ${ticketId}
-    `;
-
-    const shouldReassign =
-      !existingTicket?.assigned_team_id ||
-      !existingTicket.assigned_user_id ||
-      decision.confidence >= 0.75;
-
-    if (shouldReassign && decision.assignedTeamId && decision.assignedUserId) {
-      await sql`
-        update tickets
-        set
-          assigned_team_id = ${decision.assignedTeamId},
-          assigned_user_id = ${decision.assignedUserId},
-          status = case
-            when status = 'new' then 'assigned'
-            else status
-          end
-        where id = ${ticketId}
-      `;
-      reassignedExistingTicket =
-        existingTicket?.assigned_team_id !== decision.assignedTeamId ||
-        existingTicket?.assigned_user_id !== decision.assignedUserId;
+  if (!claims.length) {
+    const receipts = await sql`select response from inbound_webhook_receipts
+      where org_id=${orgId} and source=${parsedAlert.source} and external_id=${externalId}`;
+    if (isRecord(receipts[0]?.response)) {
+      return NextResponse.json({...receipts[0].response, duplicate:true}, {status:202});
     }
-
-    if (alert.createdFrom === "client_email" && alert.bodyText) {
-      await sql`
-        insert into ticket_comments (
-          ticket_id,
-          author_email,
-          body,
-          created_via
-        )
-        values (
-          ${ticketId},
-          ${alert.senderEmail},
-          ${alert.bodyText},
-          'email'
-        )
-      `;
-    }
-  } else {
-    const ticketRows = (await sql`
-      insert into tickets (
-        org_id,
-        incident_id,
-        title,
-        description,
-        status,
-        priority,
-        importance_score,
-        urgency_score,
-        assigned_team_id,
-        assigned_user_id,
-        sla_due_at,
-        reporter_email,
-        created_from
-      )
-      values (
-        ${orgId},
-        ${incidentId},
-        ${alert.subject},
-        ${alert.bodyText},
-        ${decision.needsHumanTriage ? "triaged" : "assigned"},
-        ${score.priority},
-        ${score.importanceScore},
-        ${score.urgencyScore},
-        ${decision.assignedTeamId || null},
-        ${decision.assignedUserId || null},
-        now() + (${slaMinutes(score.priority)} || ' minutes')::interval,
-        ${alert.senderEmail},
-        ${alert.createdFrom}
-      )
-      returning
-        id,
-        ticket_number::text,
-        assigned_team_id::text,
-        assigned_user_id::text
-    `) as TicketIdRow[];
-    ticketId = String(ticketRows[0].id);
-    ticketNumber = String(ticketRows[0].ticket_number);
+    return NextResponse.json({ok:false,error:"This delivery is already being processed; retry shortly"},
+      {status:503,headers:{"retry-after":"30"}});
   }
-
   try {
-    await persistCompletedTicketTriage({
-      orgId,
-      ticketId,
-      idempotencyKey: `triage:${ticketId}:${alertId}:${decision.rubricVersion}`,
-      ticket: {
-        title: alert.subject,
-        description: alert.bodyText,
-        source: alert.source,
-        service: alert.service,
-        severity: alert.severity,
-      },
-      teams: context.teams.map((team) => ({
-        id: team.id,
-        name: team.name,
-        description: `${team.name} support queue`,
-      })),
-      fallbackPriority: heuristicScore.priority,
-      result: decision.jevResult,
-      routing: {
-        priority: decision.priority,
-        assignedTeamId: decision.assignedTeamId || null,
-        assignedUserId: decision.assignedUserId || null,
-        needsHumanTriage: decision.needsHumanTriage,
-      },
-    });
-  } catch (error) {
-    console.warn("jev_triage_persistence_failed", {
-      ticketId,
-      error: error instanceof Error ? error.message : "unknown",
-    });
+    // Lazily recognize old successful deliveries without destructive deduplication.
+    if (parsedAlert.externalId) {
+      const legacy = await sql`
+        select a.id::text as alert_id,i.id::text as incident_id,t.id::text as ticket_id,
+          t.ticket_number::text,t.priority
+        from alert_events a join incident_alert_links l on l.alert_event_id=a.id
+        join incidents i on i.id=l.incident_id join tickets t on t.incident_id=i.id
+        where a.org_id=${orgId} and a.source=${parsedAlert.source} and a.external_id=${parsedAlert.externalId}
+        order by a.created_at,t.created_at limit 1
+      `;
+      if (legacy[0]) {
+        const prior=legacy[0];
+        const response={ok:true,duplicate:true,alertId:prior.alert_id,incidentId:prior.incident_id,
+          ticketId:prior.ticket_id,ticketNumber:prior.ticket_number,priority:prior.priority};
+        await sql`update inbound_webhook_receipts set response=${JSON.stringify(response)}::jsonb,completed_at=now()
+          where org_id=${orgId} and source=${parsedAlert.source} and external_id=${externalId} and claim_token=${claimToken}::uuid`;
+        return NextResponse.json(response,{status:202});
+      }
+    }
+    const context = await assignmentContext(orgId);
+    let decision = await triageIncomingAlert({alert:parsedAlert,rawPayload,heuristicScore,context});
+    const policy=await evaluateConfiguredRouting(orgId,
+      {issueType:decision.issueType,urgency:decision.urgency,source:parsedAlert.createdFrom,needsHuman:decision.needsHumanTriage,confidence:decision.confidence},
+      {priority:decision.priority,slaMinutes:slaMinutes(decision.priority),teamId:decision.assignedTeamId || null});
+    if(!decision.needsHumanTriage) {
+      const members=context.users.filter(user=>user.teamIds.includes(policy.teamId ?? ""));
+      const onCall=members.filter(user=>user.isOnCall);
+      const owner=[...(onCall.length ? onCall : members)].sort((a,b)=>a.openTickets-b.openTickets || (a.fullName??a.email).localeCompare(b.fullName??b.email))[0];
+      decision={...decision,priority:policy.priority,assignedTeamId:policy.teamId ?? "",assignedUserId:owner?.id ?? "",
+        reasoning:policy.ruleName ? "Configured routing policy: "+policy.ruleName : decision.reasoning};
+    }
+    const alert: NormalizedAlert = {...parsedAlert,subject:decision.title,bodyText:decision.summary,
+      service:decision.service,severity:decision.severity,createdFrom:decision.createdFrom};
+    const alertFingerprint = fingerprint(alert,decision.dedupHint);
+    const responseBase = {ok:true,createdFrom:alert.createdFrom,recipientEmail:alert.recipientEmail,fingerprint:alertFingerprint,
+      configuredRuleId:policy.ruleId,configuredRuleName:policy.ruleName,
+      jev:{usedAi:decision.usedAi,model:decision.model,confidence:decision.confidence,fallbackReason:decision.fallbackReason,
+        issueType:decision.issueType,urgency:decision.urgency,needsHumanTriage:decision.needsHumanTriage}};
+    // All intake mutations and receipt completion commit atomically.
+    const writes=await sql`
+      with owned as materialized (
+        select * from inbound_webhook_receipts where org_id=${orgId} and source=${parsedAlert.source}
+          and external_id=${externalId} and claim_token=${claimToken}::uuid and completed_at is null for update
+      ), existing_incident as materialized (
+        select i.id from incidents i cross join owned where i.org_id=${orgId} and i.dedup_key=${alertFingerprint}
+          and i.status in ('open','monitoring') order by i.last_seen_at desc limit 1
+      ), new_incident as (
+        insert into incidents(org_id,title,status,dedup_key,importance_score,urgency_score,priority,confidence,first_seen_at,last_seen_at,blast_count)
+        select ${orgId},${alert.subject},'open',${alertFingerprint},${decision.importanceScore},${decision.urgencyScore},
+          ${decision.priority},${decision.confidence},now(),now(),1 from owned where not exists(select 1 from existing_incident)
+        returning id
+      ), changed_incident as (
+        update incidents i set last_seen_at=now(),blast_count=blast_count+1,
+          urgency_score=greatest(urgency_score,${decision.urgencyScore}),
+          importance_score=greatest(importance_score,${decision.importanceScore}),priority=least(priority,${decision.priority})::text,updated_at=now()
+        from existing_incident e where i.id=e.id returning i.id
+      ), selected_incident as (
+        select id from new_incident union all select id from changed_incident
+      ), new_alert as (
+        insert into alert_events(org_id,source,external_id,sender_email,subject,body_text,raw_payload,fingerprint)
+        select ${orgId},${alert.source},${parsedAlert.externalId ?? request.headers.get("svix-id")},${alert.senderEmail},
+          ${alert.subject},${alert.bodyText},${JSON.stringify(rawPayload)}::jsonb,${alertFingerprint} from owned returning id
+      ), linked_alert as (
+        insert into incident_alert_links(incident_id,alert_event_id)
+        select i.id,a.id from selected_incident i cross join new_alert a
+      ), existing_ticket as materialized (
+        select t.id,exists(select 1 from audit_logs a where a.entity_id=t.id
+          and a.action='ticket.updated' and a.metadata ? 'priority') as human_priority_override
+        from tickets t join selected_incident i on i.id=t.incident_id
+        where t.status not in ('resolved','closed') order by t.updated_at desc limit 1
+      ), changed_ticket as (
+        update tickets t set updated_at=now(),priority=case when e.human_priority_override then priority else least(priority,${decision.priority})::text end,
+          urgency_score=case when e.human_priority_override then urgency_score else greatest(urgency_score,${decision.urgencyScore}) end,
+          importance_score=case when e.human_priority_override then importance_score else greatest(importance_score,${decision.importanceScore}) end,
+          sla_due_at=least(sla_due_at,created_at+(${policy.slaMinutes} || ' minutes')::interval),
+          response_due_at=least(response_due_at,created_at+(${policy.slaMinutes} || ' minutes')::interval)
+        from existing_ticket e where t.id=e.id
+        returning t.id,t.ticket_number,t.incident_id,t.org_id,t.status,t.priority,t.assigned_team_id,t.assigned_user_id
+      ), new_ticket as (
+        insert into tickets(org_id,incident_id,title,description,status,priority,importance_score,urgency_score,
+          assigned_team_id,assigned_user_id,sla_due_at,response_due_at,reporter_email,created_from)
+        select ${orgId},i.id,${alert.subject},${alert.bodyText},${decision.needsHumanTriage ? "triaged" : "assigned"},
+          ${decision.priority},${decision.importanceScore},${decision.urgencyScore},
+          ${decision.assignedTeamId || null}::uuid,${decision.assignedUserId || null}::uuid,
+          now()+(${policy.slaMinutes} || ' minutes')::interval,now()+(${policy.slaMinutes} || ' minutes')::interval,
+          ${alert.senderEmail},${alert.createdFrom}
+        from selected_incident i where not exists(select 1 from existing_ticket)
+        returning id,ticket_number,incident_id,org_id,status,priority,assigned_team_id,assigned_user_id
+      ), selected_ticket as (
+        select * from new_ticket union all select * from changed_ticket
+      ), initial_event as (
+        insert into ticket_status_events(org_id,ticket_id,from_status,to_status,completion_cycle,source,metadata)
+        select org_id,id,null,status,0,'intake','{}'::jsonb from new_ticket
+      ), customer_comment as (
+        insert into ticket_comments(ticket_id,author_email,body,created_via)
+        select id,${alert.senderEmail},${alert.bodyText},'email' from changed_ticket
+        where ${alert.createdFrom === "client_email" && Boolean(alert.bodyText)}
+      ), completed_receipt as (
+        update inbound_webhook_receipts r set completed_at=now(),
+          response=${JSON.stringify(responseBase)}::jsonb || jsonb_build_object(
+            'alertId',a.id::text,'incidentId',t.incident_id::text,'ticketId',t.id::text,
+            'ticketNumber',t.ticket_number::text,'priority',t.priority,'assignedTeamId',t.assigned_team_id::text,
+            'assignedUserId',t.assigned_user_id::text)
+        from selected_ticket t cross join new_alert a
+        where r.org_id=${orgId} and r.source=${parsedAlert.source} and r.external_id=${externalId}
+          and r.claim_token=${claimToken}::uuid returning r.response
+      ) select response from completed_receipt
+    `;
+    const response = writes[0]?.response;
+    if (!isRecord(response) || typeof response.ticketId !== "string") throw new Error("Delivery claim expired");
+    const ticketId=response.ticketId;
+    const assignedTeamId=typeof response.assignedTeamId==="string" ? response.assignedTeamId : null;
+    const assignedUserId=typeof response.assignedUserId==="string" ? response.assignedUserId : null;
+    try {
+      await persistCompletedTicketTriage({orgId,ticketId,idempotencyKey:`triage:${ticketId}:${String(response.alertId)}:${decision.rubricVersion}`,
+        ticket:{title:alert.subject,description:alert.bodyText,source:alert.source,service:alert.service,severity:alert.severity},
+        teams:context.teams.map(team=>({id:team.id,name:team.name,description:`${team.name} support queue`})),
+        fallbackPriority:heuristicScore.priority,result:decision.jevResult,
+        routing:{priority:response.priority as Priority,assignedTeamId,assignedUserId,
+          needsHumanTriage:assignedTeamId || assignedUserId ? false : decision.needsHumanTriage}});
+    } catch {
+      console.warn("jev_triage_persistence_failed",{ticketId});
+    }
+    await writeJevTriageAudit({orgId,ticketId,decision:{...decision,assignedTeamId:assignedTeamId ?? "",assignedUserId:assignedUserId ?? ""},
+      reassignedExistingTicket:false});
+    return NextResponse.json(response,{status:202});
+  } catch {
+    // A failed atomic intake has no partial ticket; release its lease for a safe retry.
+    await sql`update inbound_webhook_receipts set lease_until=now()-interval '1 second'
+      where org_id=${orgId} and source=${parsedAlert.source} and external_id=${externalId}
+        and claim_token=${claimToken}::uuid and completed_at is null`;
+    return NextResponse.json({ok:false,error:"Unable to finish this delivery; retry shortly"},
+      {status:503,headers:{"retry-after":"30"}});
   }
-
-  await writeJevTriageAudit({
-    orgId,
-    ticketId,
-    decision,
-    reassignedExistingTicket,
-  });
-
-  return NextResponse.json(
-    {
-      ok: true,
-      alertId,
-      incidentId,
-      ticketId,
-      ticketNumber,
-      priority: score.priority,
-      assignedTeamId: decision.assignedTeamId,
-      assignedUserId: decision.assignedUserId,
-      createdFrom: alert.createdFrom,
-      recipientEmail: alert.recipientEmail,
-      fingerprint: alertFingerprint,
-      jev: {
-        usedAi: decision.usedAi,
-        model: decision.model,
-        confidence: decision.confidence,
-        fallbackReason: decision.fallbackReason,
-        issueType: decision.issueType,
-        urgency: decision.urgency,
-        needsHumanTriage: decision.needsHumanTriage,
-      },
-    },
-    { status: 202 },
-  );
 }

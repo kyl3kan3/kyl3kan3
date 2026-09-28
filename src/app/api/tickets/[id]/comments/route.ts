@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { addTicketComment } from "@/lib/operations";
-import { appAccessFailure, isAppAccessAuthorized } from "@/lib/manager-auth";
+import { appMutationFailure } from "@/lib/manager-request";
 
 export const dynamic = "force-dynamic";
 
@@ -9,14 +9,14 @@ type RouteContext = {
 };
 
 export async function POST(request: Request, context: RouteContext) {
-  if (!isAppAccessAuthorized(request)) return appAccessFailure();
+  const denied = appMutationFailure(request);
+  if (denied) return denied;
   try {
     const { id } = await context.params;
     const payload = (await request.json()) as Record<string, unknown>;
     const body = typeof payload.body === "string" ? payload.body : "";
-    const authorEmail =
-      typeof payload.authorEmail === "string" ? payload.authorEmail : null;
-    const comment = await addTicketComment(id, { body, authorEmail });
+    // Shared workspace credentials do not authenticate an individual email identity.
+    const comment = await addTicketComment(id, { body, authorEmail: null });
 
     return NextResponse.json({ ok: true, comment }, { status: 201 });
   } catch (error) {

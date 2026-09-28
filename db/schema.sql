@@ -263,6 +263,7 @@ alter table tickets add column if not exists issue_type text;
 alter table tickets add column if not exists triage_confidence numeric;
 alter table tickets add column if not exists triage_needs_human boolean not null default false;
 alter table tickets add column if not exists first_response_at timestamptz;
+alter table tickets add column if not exists response_due_at timestamptz;
 alter table tickets add column if not exists resolved_at timestamptz;
 alter table tickets add column if not exists completion_cycle int not null default 0;
 alter table tickets add column if not exists reopened_count int not null default 0;

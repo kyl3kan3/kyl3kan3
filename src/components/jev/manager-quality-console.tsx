@@ -27,6 +27,7 @@ export type ManagerQualityConsoleProps = {
   title?: string;
   description?: string;
   className?: string;
+  uniqueHandledTickets?: number;
 };
 
 function formatMinutes(value: number | null) {
@@ -119,6 +120,7 @@ export function ManagerQualityConsole({
   title = "Comparable quality cohorts",
   description = "Compare people doing similar work. Quality includes only criteria with enough evidence to score.",
   className = "",
+  uniqueHandledTickets,
 }: ManagerQualityConsoleProps) {
   const sortedCohorts = [...cohorts].sort(
     (left, right) =>
@@ -176,13 +178,15 @@ export function ManagerQualityConsole({
         </span>
       </div>
 
+      <p className="mt-4 rounded-lg bg-amber-50/70 p-4 text-pretty text-xs leading-5 text-amber-900">Attribution comes from ticket history, not the shared workspace login. Response time is the ticket’s first evidenced customer response—not necessarily a response by its final technician. Internal notes and acknowledgements do not count. Missing evidence is not a zero score; review examples before making employee decisions.</p>
+
       <dl className="mt-5 grid gap-3 sm:grid-cols-3">
         <div className="rounded-lg bg-background p-4 ring-1 ring-border">
           <dt className="text-[11px] font-semibold uppercase tracking-[0.09em] text-ink-muted">
             Tickets handled
           </dt>
           <dd className="mt-1 text-2xl font-semibold tabular-nums text-ink">
-            {totalHandled}
+            {uniqueHandledTickets ?? totalHandled}
           </dd>
         </div>
         <div className="rounded-lg bg-background p-4 ring-1 ring-border">

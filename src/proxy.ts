@@ -21,9 +21,14 @@ export function proxy(request: NextRequest) {
     return failure;
   }
   const managerRoute =
+    request.nextUrl.pathname === "/settings" ||
+    request.nextUrl.pathname.startsWith("/settings/") ||
     request.nextUrl.pathname === "/quality" ||
     request.nextUrl.pathname.startsWith("/quality/") ||
     request.nextUrl.pathname === "/api/quality" ||
+    request.nextUrl.pathname === "/api/users" ||
+    request.nextUrl.pathname === "/api/teams" ||
+    ["/api/operations", "/api/directory", "/api/routing-rules", "/api/readiness"].includes(request.nextUrl.pathname) ||
     request.nextUrl.pathname.startsWith("/api/quality/");
   if (managerRoute) {
     if (!isManagerDashboardAuthorized(request)) {
@@ -49,5 +54,9 @@ export const config = {
     "/api/teams/:path*",
     "/api/tickets/:path*",
     "/api/users/:path*",
+    "/api/operations/:path*",
+    "/api/directory/:path*",
+    "/api/routing-rules/:path*",
+    "/api/readiness/:path*",
   ],
 };

@@ -32,7 +32,7 @@ async function run(request: Request) {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
   try {
-    const result = await processQueuedJevAssessments(10);
+    const result = await processQueuedJevAssessments(100);
     return NextResponse.json({ ok: true, ...result });
   } catch (error) {
     return NextResponse.json(

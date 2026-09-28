@@ -1,3 +1,4 @@
+import { bindSyncroAccount, ensureSyncroWorkflowSchema, externalId, fetchSyncroHistory, mapSyncroUser, record, runSyncroImportBatch, timestamp, type SyncroFetch } from "./syncro-workflow";
 import { randomUUID } from "node:crypto";
 import { getSql, hasDatabaseUrl } from "./db";
 import {
@@ -16,11 +17,6 @@ type SyncRunRow = {
 };
 type SyncLockRow = { lock_token: string };
 type SchemaReadyRow = { ready: boolean };
-type MirroredTicketRow = {
-  id: string;
-  status: TicketStatus;
-  completion_cycle: number | string;
-};
 
 export type SyncroConfig = {
   configured: boolean;
@@ -69,6 +65,8 @@ export type SyncroSyncResult = {
   customersSynced: number;
   ticketsSynced: number;
   cursorUpdatedAt: string | null;
+  pendingTickets: number;
+  failedTickets: number;
 };
 
 const activeStatuses = new Set([
@@ -474,14 +472,8 @@ async function ensureDefaultOrg() {
   return rows[0].id;
 }
 
-function formatCursor(value: string | null) {
-  if (!value) return null;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
-  return new Date(date.getTime() - 60_000).toISOString();
-}
 
-async function syncroFetch(path: string, params: Record<string, string>) {
+async function syncroFetch(path: string, params: Record<string, string>, deadline = Number.POSITIVE_INFINITY) {
   const config = getSyncroConfig();
   if (!config.configured || !config.baseUrl) {
     throw new Error("Syncro is not configured");
@@ -508,6 +500,8 @@ async function syncroFetch(path: string, params: Record<string, string>) {
   );
 
   async function requestWithAuth(mode: "header" | "query") {
+    if (Date.now() + 350 >= deadline) throw new Error("Syncro batch time budget reached; queued work will resume");
+    await new Promise(resolve => setTimeout(resolve, 350));
     const requestUrl = new URL(url);
     const headers: Record<string, string> = { accept: "application/json" };
     if (mode === "header") {
@@ -521,7 +515,7 @@ async function syncroFetch(path: string, params: Record<string, string>) {
         headers,
         redirect: "error",
         cache: "no-store",
-        signal: AbortSignal.timeout(timeoutMs),
+        signal: AbortSignal.timeout(Math.max(1, Math.min(timeoutMs, deadline - Date.now()))),
       });
     } catch (error) {
       const reason = error instanceof Error && error.name === "TimeoutError" ? "request timed out" : "network request failed";
@@ -545,66 +539,14 @@ async function syncroFetch(path: string, params: Record<string, string>) {
 
   syncroAuthPreference = { cacheKey: authCacheKey, mode: authMode };
 
-  return response.json() as Promise<unknown>;
-}
-
-function getPaginationMeta(payload: unknown) {
-  const meta = objectValue(objectValue(payload)?.meta);
-  if (!meta) return null;
-
-  const page = Number(meta.page);
-  const totalPages = Number(meta.total_pages ?? meta.totalPages);
-  if (!Number.isFinite(page) || !Number.isFinite(totalPages)) return null;
-
-  return {
-    page: Math.max(1, Math.trunc(page)),
-    totalPages: Math.max(1, Math.trunc(totalPages)),
-  };
-}
-
-async function fetchAllSyncro<T>(
-  path: string,
-  normalize: (payload: unknown) => T[],
-  extraParams: Record<string, string> = {},
-  onPageFetched?: () => Promise<void>,
-) {
-  const maxPages = Math.max(
-    1,
-    Number.parseInt(process.env.SYNCRO_MAX_PAGES ?? "10", 10) || 10,
-  );
-  const all: T[] = [];
-
-  for (let page = 1; page <= maxPages; page += 1) {
-    const payload = await syncroFetch(path, {
-      page: String(page),
-      ...extraParams,
-    });
-    const items = normalize(payload);
-    all.push(...items);
-    await onPageFetched?.();
-    const meta = getPaginationMeta(payload);
-    if (meta && meta.page >= meta.totalPages) break;
-    if (items.length === 0) {
-      if (meta && meta.page < meta.totalPages) {
-        throw new Error(
-          `Syncro ${path} page ${meta.page} returned no usable records before page ${meta.totalPages}`,
-        );
-      }
-      break;
-    }
-
-    if (page >= maxPages) {
-      const total = meta ? ` of ${meta.totalPages}` : "";
-      throw new Error(
-        `Syncro ${path} pagination stopped at page ${page}${total}; increase SYNCRO_MAX_PAGES to complete the sync`,
-      );
-    }
-
-    await new Promise((resolve) => setTimeout(resolve, 350));
+  try {
+    return await response.json() as unknown;
+  } catch {
+    throw new Error(`Syncro ${path} returned an invalid JSON response`);
   }
-
-  return all;
 }
+
+
 
 async function upsertCustomer(orgId: string, customer: SyncroCustomer) {
   const sql = getSql();
@@ -639,173 +581,69 @@ async function upsertCustomer(orgId: string, customer: SyncroCustomer) {
   `;
 }
 
-async function upsertTicket(orgId: string, ticket: SyncroTicket) {
+async function upsertTicket(orgId: string, ticket: SyncroTicket, fetcher: SyncroFetch) {
   const sql = getSql();
-  const existingRows = (await sql`
-    select id::text, status, completion_cycle
-    from tickets
-    where org_id = ${orgId} and syncro_ticket_id = ${ticket.id}
-    limit 1
-  `) as MirroredTicketRow[];
-  const existing = existingRows[0] ?? null;
-  await sql`
-    insert into tickets (
-      org_id,
-      title,
-      description,
-      status,
-      priority,
-      importance_score,
-      urgency_score,
-      reporter_email,
-      created_from,
-      created_at,
-      syncro_ticket_id,
-      syncro_ticket_number,
-      syncro_customer_id,
-      syncro_status,
-      syncro_url,
-      syncro_updated_at,
-      syncro_payload
-    )
-    values (
-      ${orgId},
-      ${ticket.title},
-      ${ticket.description},
-      ${ticket.status},
-      ${ticket.priority},
-      20,
-      18,
-      coalesce(
-        ${ticket.customerEmail},
-        (
-          select email
-          from syncro_customers
-          where org_id = ${orgId}
-            and syncro_customer_id = ${ticket.customerId}
-          limit 1
-        )
-      ),
-      'syncro',
-      coalesce(${ticket.createdAt}::timestamptz, now()),
-      ${ticket.id},
-      ${ticket.number},
-      ${ticket.customerId},
-      ${ticket.syncroStatus},
-      ${ticket.url},
-      ${ticket.updatedAt},
-      ${JSON.stringify(ticket.raw)}::jsonb
-    )
-    on conflict (org_id, syncro_ticket_id) where syncro_ticket_id is not null do update
-      set title = excluded.title,
-          description = excluded.description,
-          status = excluded.status,
-          reporter_email = excluded.reporter_email,
-          created_from = 'syncro',
-          syncro_ticket_number = excluded.syncro_ticket_number,
-          syncro_customer_id = excluded.syncro_customer_id,
-          syncro_status = excluded.syncro_status,
-          syncro_url = excluded.syncro_url,
-          syncro_updated_at = excluded.syncro_updated_at,
-          syncro_payload = excluded.syncro_payload
-      where tickets.syncro_updated_at is distinct from excluded.syncro_updated_at
-         or tickets.syncro_payload is distinct from excluded.syncro_payload
-  `;
-
-  const mirroredRows = (await sql`
-    select id::text, status, completion_cycle
-    from tickets
-    where org_id = ${orgId} and syncro_ticket_id = ${ticket.id}
-    limit 1
-  `) as MirroredTicketRow[];
-  const mirrored = mirroredRows[0];
-  if (!mirrored) return;
-
-  if (!existing) {
-    await sql`
-      insert into ticket_status_events (
-        org_id,
-        ticket_id,
-        from_status,
-        to_status,
-        completion_cycle,
-        source,
-        metadata
-      ) values (
-        ${orgId},
-        ${mirrored.id},
-        null,
-        ${ticket.status},
-        0,
-        'syncro',
-        ${JSON.stringify({ syncroTicketId: ticket.id })}::jsonb
-      )
-    `;
-    await enqueueTicketTriage({
-      orgId,
-      ticketId: mirrored.id,
-      ticket: {
-        title: ticket.title,
-        description: ticket.description,
-        source: "syncro",
-        service: "support_portal",
-        severity: ticket.priority,
-      },
-      fallbackPriority: ticket.priority,
-      idempotencyKey: `triage:${mirrored.id}:syncro:${ticket.id}`,
-    });
+  const customer = normalizeSyncroCustomer(ticket.raw.customer);
+  if (customer) await upsertCustomer(orgId, customer);
+  const history = await fetchSyncroHistory(ticket.id, fetcher);
+  const technicianId = await mapSyncroUser(orgId, ticket.raw.user_id, fetcher);
+  const rows = await sql`select id::text,status,completion_cycle from tickets where org_id=${orgId} and syncro_ticket_id=${ticket.id}`;
+  const existing = rows[0];
+  const id = existing ? String(existing.id) : randomUUID();
+  const complete = ["resolved","closed"].includes(ticket.status);
+  const wasComplete = existing && ["resolved","closed"].includes(String(existing.status));
+  const completing = complete && !wasComplete;
+  const reopening = Boolean(wasComplete && !complete);
+  const initializingCompletion = complete && Number(existing?.completion_cycle ?? 0) === 0;
+  const cycle = Math.max(complete ? 1 : 0, Number(existing?.completion_cycle ?? 0) + (completing ? 1 : 0));
+  const resolvedAt = complete ? timestamp(ticket.raw.resolved_at) : null;
+  // Historical ownership is not evidence of who completed the work.
+  let evaluatedUser = existing && completing ? technicianId : null;
+  if (complete && wasComplete) {
+    const prior = await sql`select metadata from ticket_status_events where ticket_id=${id} and completion_cycle=${cycle}
+      and to_status in ('resolved','closed') order by changed_at desc limit 1`;
+    const attribution = record(prior[0]?.metadata).technicianUserId;
+    evaluatedUser = typeof attribution === "string" ? attribution : null;
   }
-
-  const wasComplete =
-    existing?.status === "resolved" || existing?.status === "closed";
-  const isComplete = ticket.status === "resolved" || ticket.status === "closed";
-  if (existing && existing.status !== ticket.status) {
-    let completionCycle = Number(existing.completion_cycle ?? 0);
-    const completing = !wasComplete && isComplete;
-    const reopening = wasComplete && !isComplete;
-    const rows = (await sql`
-      update tickets
-      set
-        completion_cycle = completion_cycle + ${completing ? 1 : 0},
-        reopened_count = reopened_count + ${reopening ? 1 : 0},
-        resolved_at = case
-          when ${completing} then now()
-          when ${reopening} then null
-          else resolved_at
-        end
-      where id = ${mirrored.id}
-      returning completion_cycle
-    `) as Array<{ completion_cycle: number | string }>;
-    completionCycle = Number(rows[0]?.completion_cycle ?? completionCycle);
-    await sql`
-      insert into ticket_status_events (
-        org_id,
-        ticket_id,
-        from_status,
-        to_status,
-        completion_cycle,
-        source,
-        metadata
-      ) values (
-        ${orgId},
-        ${mirrored.id},
-        ${existing.status},
-        ${ticket.status},
-        ${completionCycle},
-        'syncro',
-        ${JSON.stringify({ syncroTicketId: ticket.id, reopening })}::jsonb
-      )
-    `;
-    if (completing) {
-      await createCompletionAssessment({
-        orgId,
-        ticketId: mirrored.id,
-        completionCycle,
-        resolutionSummary: ticket.description,
-        customerNextSteps: null,
-        verificationEvidence: null,
-        technicianUserId: null,
-      });
+  const publicReply = history.find(entry => entry.action === "customer-facing technician message" && (!ticket.createdAt || entry.at >= ticket.createdAt));
+  const metadata = { syncroTicketId: ticket.id, reopening, technicianUserId: evaluatedUser,
+    attributionSource: existing && completing ? "syncro_assignee_at_observed_completion" : "historical_import_unattributed" };
+  await sql.transaction([
+    sql`insert into tickets(id,org_id,title,description,status,priority,importance_score,urgency_score,reporter_email,created_from,created_at,
+      assigned_user_id,syncro_ticket_id,syncro_ticket_number,syncro_customer_id,syncro_status,syncro_url,syncro_updated_at,syncro_payload,
+      syncro_evidence,completion_cycle,reopened_count,resolved_at,first_response_at,sla_due_at)
+      values (${id},${orgId},${ticket.title},${ticket.description},${ticket.status},${ticket.priority},20,18,
+      coalesce(${ticket.customerEmail},(select email from syncro_customers where org_id=${orgId} and syncro_customer_id=${ticket.customerId} limit 1)),
+      'syncro',coalesce(${ticket.createdAt}::timestamptz,now()),${technicianId},
+      ${ticket.id},${ticket.number},${ticket.customerId},${ticket.syncroStatus},${ticket.url},${ticket.updatedAt},${JSON.stringify(ticket.raw)}::jsonb,
+      ${JSON.stringify(history)}::jsonb,${cycle},0,${resolvedAt}::timestamptz,${publicReply?.at ?? null}::timestamptz,${timestamp(ticket.raw.due_date)}::timestamptz)
+      on conflict(org_id,syncro_ticket_id) where syncro_ticket_id is not null do update set
+      title=excluded.title,description=excluded.description,status=excluded.status,assigned_user_id=excluded.assigned_user_id,
+      reporter_email=excluded.reporter_email,syncro_ticket_number=excluded.syncro_ticket_number,
+      syncro_customer_id=excluded.syncro_customer_id,syncro_status=excluded.syncro_status,
+      syncro_url=excluded.syncro_url,syncro_updated_at=excluded.syncro_updated_at,
+      syncro_payload=excluded.syncro_payload,syncro_evidence=excluded.syncro_evidence,
+      completion_cycle=${cycle},reopened_count=tickets.reopened_count+${reopening ? 1 : 0},
+      resolved_at=case when ${complete} then coalesce(excluded.resolved_at,tickets.resolved_at,now()) else null end,
+      first_response_at=excluded.first_response_at,sla_due_at=coalesce(excluded.sla_due_at,tickets.sla_due_at)`,
+    sql`insert into ticket_status_events(org_id,ticket_id,from_status,to_status,completion_cycle,source,metadata,changed_at)
+      select ${orgId},${id},${existing?.status ?? null},${ticket.status},${cycle},'syncro',${JSON.stringify(metadata)}::jsonb,
+        coalesce(${completing ? resolvedAt : ticket.updatedAt}::timestamptz,now())
+      where ${!existing || existing.status !== ticket.status || initializingCompletion}`,
+  ]);
+  // Idempotent enqueue also repairs a crash between the committed import and the job enqueue.
+  await enqueueTicketTriage({ orgId, ticketId:id,
+    ticket:{title:ticket.title,description:ticket.description,source:"syncro",service:"support_portal",severity:ticket.priority},
+    fallbackPriority:ticket.priority,preserveAssignment:true,preservePriority:true,
+    idempotencyKey:`triage:${id}:syncro:${ticket.id}` });
+  if (complete) {
+    const assessments = await sql`select id from jev_assessments where ticket_id=${id} and kind='completion_review' and completion_cycle=${cycle} limit 1`;
+    if (!assessments.length) {
+      const events = await sql`select metadata from ticket_status_events where ticket_id=${id} and completion_cycle=${cycle}
+        and to_status in ('resolved','closed') order by changed_at desc limit 1`;
+      const saved = record(events[0]?.metadata);
+      await createCompletionAssessment({orgId,ticketId:id,completionCycle:cycle,
+        technicianUserId:typeof saved.technicianUserId === "string" ? saved.technicianUserId : null});
     }
   }
 }
@@ -901,8 +739,25 @@ export async function testSyncroConnection() {
     throw new Error("Syncro subdomain and API key are required");
   }
 
-  await syncroFetch("/customers", { page: "1" });
-  await syncroFetch("/tickets", { page: "1" });
+  const customers = record(await syncroFetch("/customers", { page: "1" }));
+  const tickets = record(await syncroFetch("/tickets", { page: "1" }));
+  const users = record(await syncroFetch("/users", { page: "1" }));
+  if (!Array.isArray(customers.customers) || !Array.isArray(tickets.tickets) || !Array.isArray(users.users)) {
+    throw new Error("Syncro connection response is malformed; verify API permissions");
+  }
+  const sample = Array.isArray(tickets.tickets) ? record(tickets.tickets[0]) : {};
+  const sampleId = externalId(sample.id);
+  if (sampleId) {
+    const detail = record(record(await syncroFetch(`/tickets/${sampleId}`, {})).ticket);
+    if (externalId(detail.id) !== sampleId) throw new Error("Syncro ticket response does not match requested identity");
+    const comments = record(await syncroFetch(`/tickets/${sampleId}/comments`, { page: "1", comment_format: "plaintext" }));
+    if (!Array.isArray(comments.comments)) throw new Error("Syncro comments response is missing comments");
+    const userId = externalId(detail.user_id);
+    if (userId) {
+      const user = record(record(await syncroFetch(`/users/${userId}`, {})).user);
+      if (externalId(user.id) !== userId) throw new Error("Syncro user response does not match requested identity");
+    }
+  }
   return { ok: true, baseUrl: config.baseUrl };
 }
 
@@ -917,8 +772,15 @@ export async function syncSyncro(): Promise<SyncroSyncResult> {
   }
 
   await Promise.all([ensureSyncroSchema(), ensureJevSchema()]);
+  await ensureSyncroWorkflowSchema();
   const sql = getSql();
   const orgId = await ensureDefaultOrg();
+  const deadline = Date.now() + 200_000;
+  const fetcher: SyncroFetch = (path, params) => syncroFetch(path, params, deadline);
+  // Do not bind an organization to a mistyped or unauthenticated account.
+  const users = record(await fetcher("/users", { page: "1" }));
+  if (!Array.isArray(users.users)) throw new Error("Syncro users response is malformed; verify API permissions");
+  await bindSyncroAccount(orgId, config.subdomain!);
   const lockToken = await acquireSyncLock(orgId);
   let runId: string | null = null;
 
@@ -939,64 +801,28 @@ export async function syncSyncro(): Promise<SyncroSyncResult> {
     `) as IdRow[];
     runId = runRows[0].id;
 
-    const cursorRows = (await sql`
-      select cursor_updated_at::text
-      from syncro_sync_runs
-      where org_id = ${orgId} and status = 'success' and cursor_updated_at is not null
-      order by finished_at desc
-      limit 1
-    `) as { cursor_updated_at: string | null }[];
-    const cursor = formatCursor(cursorRows[0]?.cursor_updated_at ?? null);
-
-    const customers = await fetchAllSyncro(
-      "/customers",
-      extractSyncroCustomers,
-      {},
-      () => renewSyncLock(orgId, lockToken),
-    );
-    for (const [index, customer] of customers.entries()) {
-      if (index > 0 && index % 25 === 0) {
-        await renewSyncLock(orgId, lockToken);
-      }
-      await upsertCustomer(orgId, customer);
-    }
-
-    const tickets = await fetchAllSyncro(
-      "/tickets",
-      (payload) => extractSyncroTickets(payload, config.baseUrl),
-      cursor ? { since_updated_at: cursor } : {},
-      () => renewSyncLock(orgId, lockToken),
-    );
-    let cursorUpdatedAt: string | null = cursorRows[0]?.cursor_updated_at ?? null;
-    for (const [index, ticket] of tickets.entries()) {
-      if (index > 0 && index % 25 === 0) {
-        await renewSyncLock(orgId, lockToken);
-      }
-      await upsertTicket(orgId, ticket);
-      if (
-        ticket.updatedAt &&
-        (!cursorUpdatedAt ||
-          new Date(ticket.updatedAt).getTime() > new Date(cursorUpdatedAt).getTime())
-      ) {
-        cursorUpdatedAt = ticket.updatedAt;
-      }
-    }
+    const batch = await runSyncroImportBatch({
+      orgId, fetcher, renew: () => renewSyncLock(orgId,lockToken),
+      customer: async raw => { const customer=normalizeSyncroCustomer(raw); if (!customer) throw new Error("Invalid customer"); await upsertCustomer(orgId,customer); },
+      ticket: async raw => { const ticket=normalizeSyncroTicket(raw,config.baseUrl); if (!ticket) throw new Error("Invalid ticket"); await upsertTicket(orgId,ticket,fetcher); },
+    });
+    const { cursorUpdatedAt } = batch;
 
     await renewSyncLock(orgId, lockToken);
     await sql`
       update syncro_sync_runs
-      set status = 'success',
+      set status = ${batch.failedTickets > 0 ? "error" : "success"},
+          error = ${batch.failedTickets > 0 ? "Some ticket imports failed and remain queued for retry. Check readiness for backlog." : null},
           finished_at = now(),
-          customers_synced = ${customers.length},
-          tickets_synced = ${tickets.length},
+          customers_synced = ${batch.customersSynced},
+          tickets_synced = ${batch.ticketsSynced},
           cursor_updated_at = ${cursorUpdatedAt}
       where id = ${runId}
     `;
 
     return {
       ok: true,
-      customersSynced: customers.length,
-      ticketsSynced: tickets.length,
+      ...batch,
       cursorUpdatedAt,
     };
   } catch (error) {

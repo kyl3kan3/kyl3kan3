@@ -14,6 +14,7 @@ async function applyJevSchema() {
     add column if not exists triage_needs_human boolean not null default false
   `;
   await sql`alter table tickets add column if not exists first_response_at timestamptz`;
+  await sql`alter table tickets add column if not exists response_due_at timestamptz`;
   await sql`alter table tickets add column if not exists resolved_at timestamptz`;
   await sql`
     alter table tickets
@@ -172,7 +173,7 @@ async function isJevSchemaReady() {
   const rows = (await sql`
     select (
       (
-        select count(*) = 7
+        select count(*) = 8
         from information_schema.columns
         where table_schema = current_schema()
           and table_name = 'tickets'
@@ -181,6 +182,7 @@ async function isJevSchemaReady() {
             'triage_confidence',
             'triage_needs_human',
             'first_response_at',
+            'response_due_at',
             'resolved_at',
             'completion_cycle',
             'reopened_count'

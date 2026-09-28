@@ -40,7 +40,9 @@ const readiness=await request('/api/readiness','MANAGER_DASHBOARD_PASSWORD');
 assert.equal(readiness.status,200);
 const ready=await readiness.json();
 console.log('Readiness:',JSON.stringify(ready));
-for(const [name,value] of Object.entries(ready.checks))if(name!=='repairshopr')assert.equal(value,true,`${name} is not ready`);
+for(const [name,value] of Object.entries(ready.checks))if(!['ticketingProvider','secureAccess'].includes(name))assert.equal(value,true,`${name} is not ready`);
+if (!ready.checks.secureAccess) console.log('Real-data launch blocked: temporary shared access credentials remain configured');
+if (!ready.checks.ticketingProvider) console.log('Real-account acceptance pending: ticketing provider keys are not configured');
 const dashboard=await request('/api/dashboard','APP_ACCESS_PASSWORD');
 assert.equal(dashboard.status,200);
 const data=await dashboard.json();
@@ -67,3 +69,21 @@ assert.equal(result.jev.completionReview,'succeeded','Live Jev completion review
 const worker=await request('/api/jobs/jev-assessments','CRON_SECRET');
 assert.equal(worker.status,200);const jobs=await worker.json();assert.equal(jobs.ok,true);
 console.log('Scheduled Jev assessment worker healthy');
+const operations = await request('/api/operations', 'MANAGER_DASHBOARD_PASSWORD');
+assert.equal(operations.status,200);const ops=await operations.json();assert.equal(ops.ok,true);
+assert.ok(Array.isArray(ops.writeback.proposals));
+assert.ok(Array.isArray(ops.notifications));
+assert.equal((await request('/api/operations','APP_ACCESS_PASSWORD')).status,401);
+assert.equal((await request('/api/jobs/provider-writebacks')).status,401);
+const writes=await request('/api/jobs/provider-writebacks','CRON_SECRET');
+assert.equal(writes.status,200);assert.equal((await writes.json()).ok,true);
+console.log('Manager operations and safe write-back worker healthy');
+for (const route of ['/api/directory','/api/routing-rules']) {
+  assert.equal((await request(route,'APP_ACCESS_PASSWORD')).status,401);
+  const manager=await request(route,'MANAGER_DASHBOARD_PASSWORD');assert.equal(manager.status,200);
+  assert.equal((await manager.json()).ok,true);
+}
+assert.equal((await request('/api/jobs/workflow-notifications')).status,401);
+const notifications=await request('/api/jobs/workflow-notifications','CRON_SECRET');
+assert.equal(notifications.status,200);assert.equal((await notifications.json()).ok,true);
+console.log('Directory, routing rules, and operational alert worker healthy');

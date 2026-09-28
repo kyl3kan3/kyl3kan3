@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
-import { appAccessFailure, isAppAccessAuthorized } from "@/lib/manager-auth";
+import { managerRequestFailure } from "@/lib/manager-request";
 
 export const dynamic = "force-dynamic";
 
@@ -18,48 +18,18 @@ function parseJson(value: string) {
   }
 }
 
-function isPrivateHost(hostname: string) {
-  const host = hostname.toLowerCase();
-
-  if (
-    host === "localhost" ||
-    host === "0.0.0.0" ||
-    host === "::1" ||
-    host.endsWith(".local")
-  ) {
-    return true;
-  }
-
-  if (/^127\./.test(host) || /^10\./.test(host) || /^169\.254\./.test(host)) {
-    return true;
-  }
-
-  const match172 = host.match(/^172\.(\d+)\./);
-  if (match172) {
-    const secondOctet = Number(match172[1]);
-    if (secondOctet >= 16 && secondOctet <= 31) return true;
-  }
-
-  return /^192\.168\./.test(host);
-}
-
 function getWebhookUrl(value: unknown, requestUrl: string) {
   const url = new URL(text(value, "/api/webhooks/inbound-email"), requestUrl);
-
-  if (url.protocol !== "http:" && url.protocol !== "https:") {
-    throw new Error("Webhook URL must use http or https");
+  const app = new URL(process.env.APP_URL?.trim() || requestUrl);
+  if (url.origin !== new URL(requestUrl).origin || url.origin !== app.origin
+    || url.pathname !== "/api/webhooks/inbound-email"
+    || url.search || url.hash || url.username || url.password) {
+    throw new Error("Tests may only target this app's inbound-email webhook");
   }
-
-  if (process.env.NODE_ENV === "production") {
-    if (url.protocol !== "https:") {
-      throw new Error("Production webhook tests must use https");
-    }
-
-    if (isPrivateHost(url.hostname)) {
-      throw new Error("Private network webhook URLs are blocked in production");
-    }
+  if (!["http:", "https:"].includes(url.protocol)
+    || (process.env.NODE_ENV === "production" && url.protocol !== "https:")) {
+    throw new Error("Production webhook tests must use https");
   }
-
   return url;
 }
 
@@ -80,7 +50,8 @@ function defaultRecipientEmail() {
 }
 
 export async function POST(request: Request) {
-  if (!isAppAccessAuthorized(request)) return appAccessFailure();
+  const denied = managerRequestFailure(request);
+  if (denied) return denied;
   try {
     const payload = (await request.json()) as Record<string, unknown>;
     const webhookUrl = getWebhookUrl(payload.webhookUrl, request.url);
@@ -116,6 +87,7 @@ export async function POST(request: Request) {
       headers,
       body: JSON.stringify(testPayload),
       cache: "no-store",
+      redirect: "error",
       signal: controller.signal,
     });
 

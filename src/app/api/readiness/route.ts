@@ -1,15 +1,17 @@
 import { NextResponse } from "next/server";
 import { getSql, hasDatabaseUrl } from "@/lib/db";
-import { isManagerDashboardAuthorized, managerDashboardAccessFailure } from "@/lib/manager-auth";
+import { managerRequestFailure, hasStrongProductionAccess } from "@/lib/manager-request";
 import { isJevConfigured } from "@/lib/jev-config";
 import { classifyTicketWithJev, reviewCompletedWorkWithJev } from "@/lib/jev";
 import { getRepairShoprConfig, testRepairShoprConnection } from "@/lib/repairshopr";
+import { getSyncroConfig, testSyncroConnection } from "@/lib/syncro";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 export async function GET(request: Request) {
-  if (!isManagerDashboardAuthorized(request)) return managerDashboardAccessFailure();
+  const denied = managerRequestFailure(request);
+  if (denied) return denied;
   let database = false;
   let backlog: {pending: number; failed: number} | null = null;
   if (hasDatabaseUrl()) {
@@ -23,15 +25,19 @@ export async function GET(request: Request) {
       }
     } catch { database=false; }
   }
+  const providers = { repairshopr: getRepairShoprConfig().configured, syncro: getSyncroConfig().configured };
   const checks={database,appAccess:Boolean(process.env.APP_ACCESS_PASSWORD?.trim()),managerAccess:Boolean(process.env.MANAGER_DASHBOARD_PASSWORD?.trim()),
-    scheduledJobs:Boolean(process.env.CRON_SECRET?.trim()),jevCredentials:isJevConfigured(),repairshopr:getRepairShoprConfig().configured,
-    manualSync:Boolean(process.env.REPAIRSHOPR_SYNC_SECRET?.trim())};
-  return NextResponse.json({ok:true,ready:Object.values(checks).every(Boolean),checks,backlog,
-    note:"Configured credentials are not proof of connectivity. Run live checks after adding the RepairShopr subdomain and API key."},{headers:{"cache-control":"no-store"}});
+    secureAccess:hasStrongProductionAccess(),scheduledJobs:Boolean(process.env.CRON_SECRET?.trim()),jevCredentials:isJevConfigured(),
+    ticketingProvider:providers.repairshopr || providers.syncro};
+  return NextResponse.json({ok:true,ready:Object.values(checks).every(Boolean),checks,providers,backlog,
+    warnings:[...(!checks.secureAccess ? ["Temporary shared credentials are for testing only. Use unique passwords of at least 16 characters before importing customer data."] : []),
+      "Shared workspace sign-in does not authenticate an individual technician. Provider history supplies attribution; managers must review it."] ,
+    note:"Configuration is not proof of connectivity. Test each configured provider in Operations, then verify a real import → triage → completion → review cycle."},{headers:{"cache-control":"no-store"}});
 }
 
 export async function POST(request: Request) {
-  if (!isManagerDashboardAuthorized(request)) return managerDashboardAccessFailure();
+  const denied = managerRequestFailure(request);
+  if (denied) return denied;
   // Synthetic sample only: no ticket or employee data is created or modified.
   const jev=await classifyTicketWithJev({ticket:{title:"Synthetic readiness test: application will not open",description:"A single user needs help opening a desktop application."},teams:[{id:"readiness-helpdesk",name:"Helpdesk"}]});
   const review=await reviewCompletedWorkWithJev({ticket:{title:"Synthetic readiness test",issueType:"software"},
@@ -43,6 +49,12 @@ export async function POST(request: Request) {
     try { await testRepairShoprConnection();repairshopr="verified"; }
     catch { repairshopr="failed: check subdomain, API key, and customer/ticket/user read permissions"; }
   }
-  return NextResponse.json({ok:jevPassed && repairshopr==="verified",jev:{status:jevPassed?"succeeded":"failed",error:jev.error ?? review.error,triage:jev.status,completionReview:review.status},repairshopr},
+  let syncro = "credentials_missing";
+  if (getSyncroConfig().configured) {
+    try { await testSyncroConnection(); syncro = "verified"; }
+    catch { syncro = "failed: check subdomain, API key, and customer/ticket/user/comment read permissions"; }
+  }
+  const configuredResults = [getRepairShoprConfig().configured ? repairshopr : null, getSyncroConfig().configured ? syncro : null].filter(Boolean);
+  return NextResponse.json({ok:jevPassed && configuredResults.length > 0 && configuredResults.every(value => value === "verified"),jev:{status:jevPassed?"succeeded":"failed",error:jev.error ?? review.error,triage:jev.status,completionReview:review.status},repairshopr,syncro},
     {headers:{"cache-control":"no-store"}});
 }

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { parseUpdateTicketInput, updateTicket } from "@/lib/operations";
-import { appAccessFailure, isAppAccessAuthorized } from "@/lib/manager-auth";
+import { appMutationFailure } from "@/lib/manager-request";
 
 export const dynamic = "force-dynamic";
 
@@ -9,7 +9,8 @@ type RouteContext = {
 };
 
 export async function PATCH(request: Request, context: RouteContext) {
-  if (!isAppAccessAuthorized(request)) return appAccessFailure();
+  const denied = appMutationFailure(request);
+  if (denied) return denied;
   try {
     const { id } = await context.params;
     const payload = (await request.json()) as Record<string, unknown>;

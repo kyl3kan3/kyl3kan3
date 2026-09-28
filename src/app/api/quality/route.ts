@@ -12,7 +12,12 @@ export async function GET(request: Request) {
     return managerDashboardAccessFailure();
   }
   const url = new URL(request.url);
-  const windowDays = Number.parseInt(url.searchParams.get("days") ?? "30", 10);
-  const data = await getManagerQualityData(windowDays);
-  return NextResponse.json(data, { status: data.dbError ? 503 : 200 });
+  const requestedDays = (url.searchParams.get("days") ?? "30").trim();
+  const windowDays = /^\d+$/.test(requestedDays) ? Number(requestedDays) : 30;
+  try {
+    const data = await getManagerQualityData(windowDays);
+    return NextResponse.json(data, { status: data.dbError ? 503 : 200, headers: { "cache-control": "no-store" } });
+  } catch {
+    return NextResponse.json({ ok: false, error: "Quality metrics are unavailable. Check the database connection." }, { status: 503 });
+  }
 }

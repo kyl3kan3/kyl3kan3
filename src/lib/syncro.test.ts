@@ -129,6 +129,8 @@ test("sends the API token in the Authorization header, not the URL", async (t) =
     return new Response(
       JSON.stringify({
         customers: [],
+        tickets: [],
+        users: [],
         meta: { page: 1, total_pages: 1 },
       }),
       { status: 200, headers: { "content-type": "application/json" } },
@@ -164,6 +166,8 @@ test("falls back to the documented query authentication when needed", async (t) 
     return new Response(
       JSON.stringify({
         customers: [],
+        tickets: [],
+        users: [],
         meta: { page: 1, total_pages: 1 },
       }),
       { status: 200, headers: { "content-type": "application/json" } },
@@ -178,8 +182,9 @@ test("falls back to the documented query authentication when needed", async (t) 
 
   await testSyncroConnection();
 
-  assert.equal(requestedUrls.length, 3);
+  assert.equal(requestedUrls.length, 4);
   assert.equal(new URL(requestedUrls[2]).pathname, "/api/v1/tickets");
+  assert.equal(new URL(requestedUrls[3]).pathname, "/api/v1/users");
   assert.equal(new URL(requestedUrls[0]).searchParams.has("api_key"), false);
   assert.equal(
     new URL(requestedUrls[1]).searchParams.get("api_key"),

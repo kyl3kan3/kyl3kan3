@@ -587,7 +587,8 @@ async function upsertTicket(orgId: string, ticket: RepairShoprTicket) {
   const wasComplete = existing && ["resolved","closed"].includes(String(existing.status));
   const completing = complete && !wasComplete;
   const reopening = Boolean(wasComplete && !complete);
-  const cycle = Number(existing?.completion_cycle ?? 0) + (completing ? 1 : 0);
+  const initializingCompletion = complete && Number(existing?.completion_cycle ?? 0) === 0;
+  const cycle = Math.max(complete ? 1 : 0, Number(existing?.completion_cycle ?? 0) + (completing ? 1 : 0));
   const resolvedAt = complete ? timestamp(ticket.raw.resolved_at) : null;
   // Historical ownership is not evidence of who completed the work.
   let evaluatedUser = existing && completing ? technicianId : null;
@@ -599,7 +600,7 @@ async function upsertTicket(orgId: string, ticket: RepairShoprTicket) {
   }
   const publicReply = history.find(entry => entry.action === "customer-facing technician message" && (!ticket.createdAt || entry.at >= ticket.createdAt));
   const metadata = { repairshoprTicketId: ticket.id, reopening, technicianUserId: evaluatedUser,
-    attributionSource: existing ? "repairshopr_assignee_at_observed_completion" : "historical_import_unattributed" };
+    attributionSource: existing && completing ? "repairshopr_assignee_at_observed_completion" : "historical_import_unattributed" };
   await sql.transaction([
     sql`insert into tickets(id,org_id,title,description,status,priority,importance_score,urgency_score,reporter_email,created_from,created_at,
       assigned_user_id,repairshopr_ticket_id,repairshopr_ticket_number,repairshopr_customer_id,repairshopr_status,repairshopr_url,repairshopr_updated_at,repairshopr_payload,
@@ -621,7 +622,7 @@ async function upsertTicket(orgId: string, ticket: RepairShoprTicket) {
     sql`insert into ticket_status_events(org_id,ticket_id,from_status,to_status,completion_cycle,source,metadata,changed_at)
       select ${orgId},${id},${existing?.status ?? null},${ticket.status},${cycle},'repairshopr',${JSON.stringify(metadata)}::jsonb,
         coalesce(${completing ? resolvedAt : ticket.updatedAt}::timestamptz,now())
-      where ${!existing || existing.status !== ticket.status}`,
+      where ${!existing || existing.status !== ticket.status || initializingCompletion}`,
   ]);
   // Idempotent enqueue also repairs a crash between the committed import and the job enqueue.
   await enqueueTicketTriage({ orgId, ticketId:id,

@@ -1,5 +1,8 @@
 import { isJevConfigured } from "./jev-config";
 import { ensureRepairShoprWorkflowSchema } from "./repairshopr-workflow";
+import { ensureSyncroWorkflowSchema } from "./syncro-workflow";
+import { enqueueRoutingWriteback } from "./provider-writeback";
+import { evaluateConfiguredRouting } from "./routing-policy";
 import type { JevWorkHistoryEntry } from "./jev";
 import { createHash } from "node:crypto";
 import { getSql, hasDatabaseUrl } from "./db";
@@ -68,6 +71,7 @@ type TicketRoutingRow = {
   created_from: string;
   created_at: string;
   updated_at: string;
+  source_updated_at?: string | null;
 };
 
 type RoutingTeamRow = {
@@ -101,6 +105,7 @@ type TriageSnapshot = {
   fallbackPriority: Priority;
   preservePriority: boolean;
   preserveAssignment: boolean;
+  sourceUpdatedAt?: string | null;
 };
 
 type CompletionSnapshot = {
@@ -155,6 +160,7 @@ function assessmentStatus(error: string | null, attempts: number): AssessmentSta
   const retryable =
     error === "timeout" ||
     error === "request_failed" ||
+    error === "processing_error" ||
     error === "http_429" ||
     error === "http_529" ||
     Boolean(error?.match(/^http_5\d\d$/));
@@ -238,7 +244,7 @@ async function routingContext(orgId: string) {
       from users u
       left join team_members m on m.user_id = u.id
       left join tickets t on t.assigned_user_id = u.id
-      where u.org_id = ${orgId} and u.is_active
+      where u.org_id = ${orgId} and u.is_active and u.role in ('agent', 'manager', 'admin')
       group by u.id, u.email, u.full_name
       order by u.full_name nulls last, u.email
     `,
@@ -299,7 +305,9 @@ async function findTicket(ticketId: string) {
       completion_cycle,
       created_from,
       created_at::text,
-      updated_at::text
+      updated_at::text,
+      case when created_from = 'repairshopr' then to_jsonb(tickets)->>'repairshopr_updated_at'
+        when created_from = 'syncro' then to_jsonb(tickets)->>'syncro_updated_at' else null end as source_updated_at
     from tickets
     where id = ${ticketId}
     limit 1
@@ -383,6 +391,7 @@ export async function enqueueTicketTriage(input: EnqueueTriageInput) {
   if (!hasDatabaseUrl()) return null;
   await ensureJevSchema();
   const context = await routingContext(input.orgId);
+  const sourceTicket = await findTicket(input.ticketId);
   const snapshot: TriageSnapshot = {
     type: "triage",
     ticket: input.ticket,
@@ -394,6 +403,7 @@ export async function enqueueTicketTriage(input: EnqueueTriageInput) {
     fallbackPriority: input.fallbackPriority,
     preservePriority: Boolean(input.preservePriority),
     preserveAssignment: Boolean(input.preserveAssignment),
+    sourceUpdatedAt: sourceTicket?.source_updated_at ?? null,
   };
   const idempotencyKey =
     input.idempotencyKey ??
@@ -542,14 +552,24 @@ async function processTriageAssessment(
     await markAssessmentFailure(assessment, "ticket_not_found");
     return null;
   }
+  const sameSourceVersion = (ticket: TicketRoutingRow) => !snapshot.sourceUpdatedAt ||
+    (ticket.source_updated_at && Date.parse(ticket.source_updated_at) === Date.parse(snapshot.sourceUpdatedAt));
+  if (!sameSourceVersion(ticketAtStart)) {
+    await sql`update jev_assessments set status='superseded',completed_at=now(),last_error='source_changed' where id=${assessment.id}`;
+    return { status: "superseded" as const };
+  }
 
   const result = await classifyTicketWithJev({
     ticket: snapshot.ticket,
     teams: snapshot.teams,
   });
   if (result.status !== "succeeded" || !result.routing) {
-    const status = await markAssessmentFailure(assessment, result.error);
     const latest = await findTicket(assessment.ticket_id);
+    if (latest && !sameSourceVersion(latest)) {
+      await sql`update jev_assessments set status='superseded',completed_at=now(),last_error='source_changed' where id=${assessment.id}`;
+      return { status: "superseded" as const };
+    }
+    const status = await markAssessmentFailure(assessment, result.error);
     if (latest) {
       const preserveAssignment =
         snapshot.preserveAssignment ||
@@ -568,20 +588,16 @@ async function processTriageAssessment(
             when ${preserveAssignment} then assigned_user_id
             else null
           end,
-          status = ${nextStatus}
+          status = ${nextStatus},
+          triage_needs_human = true
         where id = ${assessment.ticket_id}
           and updated_at = ${latest.updated_at}::timestamptz
+          and not exists (select 1 from jev_assessments newer
+            where newer.ticket_id=${assessment.ticket_id} and newer.kind='triage'
+              and newer.created_at>(select created_at from jev_assessments where id=${assessment.id}))
         returning id::text
       `) as IdRow[];
       const routingApplied = routeRows.length > 0;
-      await sql`
-        update tickets
-        set triage_needs_human = case
-          when ${routingApplied} then true
-          else triage_needs_human
-        end
-        where id = ${assessment.ticket_id}
-      `;
       if (routingApplied && latest.status !== nextStatus) {
         await sql`
           insert into ticket_status_events (
@@ -607,11 +623,19 @@ async function processTriageAssessment(
     return null;
   }
   const context = await routingContext(assessment.org_id);
+  if (!sameSourceVersion(latest)) {
+    await sql`update jev_assessments set status='superseded',completed_at=now(),last_error='source_changed' where id=${assessment.id}`;
+    return { status: "superseded" as const };
+  }
   const suggestedTeam = context.teams.find(
     (team) => team.id === result.suggestedTeamId,
   );
   const needsHumanTriage = result.needsHumanTriage || !suggestedTeam;
-  const automaticTeamId = !needsHumanTriage ? suggestedTeam.id : null;
+  const configured = await evaluateConfiguredRouting(assessment.org_id,
+    { issueType: result.issueType, urgency: result.urgency, source: latest.created_from, needsHuman: needsHumanTriage,
+      confidence: result.confidences?.minimum },
+    { priority: result.routing.priority, slaMinutes: result.routing.slaMinutes, teamId: suggestedTeam?.id ?? null });
+  const automaticTeamId = !needsHumanTriage ? configured.teamId : null;
   const automaticOwner = automaticTeamId
     ? chooseOwner(automaticTeamId, context.users)
     : null;
@@ -629,10 +653,10 @@ async function processTriageAssessment(
   const assignedTeamId = mirrored ? latest.assigned_team_id ?? automaticTeamId : preserveAssignment
     ? latest.assigned_team_id
     : automaticTeamId;
-  const assignedUserId = preserveAssignment
+  const assignedUserId = mirrored || preserveAssignment
     ? latest.assigned_user_id
     : automaticOwner?.id ?? null;
-  const priority = preservePriority ? latest.priority : result.routing.priority;
+  const priority = mirrored || preservePriority ? latest.priority : configured.priority;
   const nextStatus = mirrored ? latest.status : needsHumanTriage
     ? latest.status === "new"
       ? "triaged"
@@ -645,43 +669,46 @@ async function processTriageAssessment(
     set
       priority = ${priority},
       importance_score = case
-        when ${preservePriority} then importance_score
+        when ${mirrored || preservePriority} then importance_score
         else ${result.routing.importanceScore}
       end,
       urgency_score = case
-        when ${preservePriority} then urgency_score
+        when ${mirrored || preservePriority} then urgency_score
         else ${result.routing.urgencyScore}
       end,
       assigned_team_id = ${assignedTeamId},
       assigned_user_id = ${assignedUserId},
       sla_due_at = case
-        when ${preservePriority} then sla_due_at
-        else created_at + (${result.routing.slaMinutes} || ' minutes')::interval
+        when ${mirrored || preservePriority} then sla_due_at
+        else least(sla_due_at, created_at + (${configured.slaMinutes} || ' minutes')::interval)
       end,
-      status = ${nextStatus}
+      response_due_at = case when ${needsHumanTriage} then response_due_at
+        else least(response_due_at, created_at + (${configured.slaMinutes} || ' minutes')::interval) end,
+      status = ${nextStatus},
+      issue_type = ${result.issueType},
+      triage_confidence = ${result.confidences?.minimum ?? null},
+      triage_needs_human = ${needsHumanTriage}
     where id = ${assessment.ticket_id}
       and updated_at = ${latest.updated_at}::timestamptz
+      and not exists (select 1 from jev_assessments newer
+        where newer.ticket_id=${assessment.ticket_id} and newer.kind='triage'
+          and newer.created_at>(select created_at from jev_assessments where id=${assessment.id}))
     returning id::text
   `) as IdRow[];
   const routingApplied = routeRows.length > 0;
+  if (!routingApplied) {
+    await sql`update jev_assessments set status='superseded',completed_at=now(),last_error='ticket_or_assessment_changed' where id=${assessment.id}`;
+    return { status: "superseded" as const };
+  }
   const confidence = result.confidences?.minimum ?? null;
 
-  await sql`
-    update tickets
-    set
-      issue_type = ${result.issueType},
-      triage_confidence = ${confidence},
-      triage_needs_human = case
-        when ${routingApplied} then ${needsHumanTriage}
-        else triage_needs_human
-      end
-    where id = ${assessment.ticket_id}
-  `;
   const routedTicket = (await findTicket(assessment.ticket_id)) ?? latest;
   const routedTeamId = routedTicket.assigned_team_id;
   const routedUserId = routedTicket.assigned_user_id;
   const routing = {
     ruleVersion: JEV_ROUTING_RULE_VERSION,
+    configuredRuleId: configured.ruleId,
+    configuredRuleName: configured.ruleName,
     priority: routedTicket.priority,
     importanceScore: routingApplied
       ? numberValue(routedTicket.importance_score)
@@ -689,7 +716,7 @@ async function processTriageAssessment(
     urgencyScore: routingApplied
       ? numberValue(routedTicket.urgency_score)
       : null,
-    slaMinutes: preservePriority ? null : result.routing.slaMinutes,
+    slaMinutes: configured.slaMinutes,
     assignedTeamId: routedTeamId,
     assignedTeam:
       context.teams.find((team) => team.id === routedTeamId)?.name ?? null,
@@ -702,6 +729,12 @@ async function processTriageAssessment(
     preservedHumanPriority: preservePriority || !routingApplied,
     preservedHumanAssignment: preserveAssignment || !routingApplied,
     routingApplied,
+    // Separate the recommendation from the source-owned values displayed above.
+    proposedRouting: mirrored && !needsHumanTriage ? {
+      priority: configured.priority,
+      sourceUpdatedAt: latest.source_updated_at ?? null,
+      ...(!latest.assigned_user_id && automaticOwner ? { assignedUserId: automaticOwner.id } : {}),
+    } : null,
   };
 
   if (routingApplied && latest.status !== nextStatus) {
@@ -768,6 +801,16 @@ async function processTriageAssessment(
     )
   `;
 
+  if (mirrored && routingApplied && routing.proposedRouting) {
+    try {
+      await enqueueRoutingWriteback({ orgId: assessment.org_id, ticketId: assessment.ticket_id,
+        assessmentId: assessment.id, proposal: routing.proposedRouting });
+    } catch {
+      // The successful assessment remains durable. The write-back worker reconciles
+      // missing proposals without repeating a paid classification.
+      console.warn("provider_writeback_enqueue_failed", { assessmentId: assessment.id });
+    }
+  }
   return { status: "succeeded" as const, result, routing };
 }
 
@@ -821,7 +864,7 @@ async function processCompletionAssessment(
     Math.round((scored.length / dimensions.length) * 10_000) / 100;
   const missingEvidenceCount = dimensions.length - scored.length;
 
-  await sql`
+  const saved = await sql`
     update jev_assessments
     set
       status = 'succeeded',
@@ -838,7 +881,14 @@ async function processCompletionAssessment(
       next_retry_at = null,
       completed_at = now()
     where id = ${assessment.id}
+      and exists (select 1 from tickets t where t.id=${assessment.ticket_id}
+        and t.completion_cycle=${numberValue(assessment.completion_cycle)} and t.status in ('resolved','closed'))
+    returning id
   `;
+  if (!saved.length) {
+    await sql`update jev_assessments set status='superseded',completed_at=now(),last_error='ticket_cycle_changed' where id=${assessment.id}`;
+    return { status: "superseded" as const };
+  }
 
   await sql`
     insert into audit_logs (
@@ -897,7 +947,11 @@ export async function processJevAssessment(assessmentId: string) {
       attempt_count
   `) as AssessmentRow[];
   const assessment = rows[0];
-  if (!assessment || !isRecord(assessment.input_snapshot)) return null;
+  if (!assessment) return null;
+  if (!isRecord(assessment.input_snapshot)) {
+    await markAssessmentFailure(assessment, "invalid_input_snapshot");
+    return null;
+  }
   const snapshot = assessment.input_snapshot as StoredSnapshot;
 
   if (assessment.kind === "triage" && snapshot.type === "triage") {
@@ -913,7 +967,7 @@ export async function processJevAssessment(assessmentId: string) {
   return null;
 }
 
-async function reconcileMissingTriageAssessments(limit: number) {
+async function reconcileMissingTriageAssessments(limit: number, deadline: number) {
   const sql = getSql();
   const rows = (await sql`
     select t.id::text
@@ -928,12 +982,13 @@ async function reconcileMissingTriageAssessments(limit: number) {
   `) as IdRow[];
   let reconciled = 0;
   for (const row of rows) {
-    const ticket = await findTicket(row.id);
-    if (!ticket) continue;
+    if (Date.now() >= deadline) break;
     try {
+      const ticket = await findTicket(row.id);
+      if (!ticket) continue;
       await enqueueTicketTriage({
         orgId: ticket.org_id,
-        ticketId: ticket.id,
+        ticketId: row.id,
         ticket: {
           title: ticket.title,
           description: ticket.description,
@@ -950,7 +1005,7 @@ async function reconcileMissingTriageAssessments(limit: number) {
       reconciled += 1;
     } catch (error) {
       console.warn("jev_triage_reconciliation_failed", {
-        ticketId: ticket.id,
+        ticketId: row.id,
         error: error instanceof Error ? error.message : "unknown",
       });
     }
@@ -958,7 +1013,7 @@ async function reconcileMissingTriageAssessments(limit: number) {
   return reconciled;
 }
 
-async function reconcileMissingCompletionAssessments(limit: number) {
+async function reconcileMissingCompletionAssessments(limit: number, deadline: number) {
   const sql = getSql();
   const rows = (await sql`
     select
@@ -999,6 +1054,7 @@ async function reconcileMissingCompletionAssessments(limit: number) {
   }>;
   let reconciled = 0;
   for (const row of rows) {
+    if (Date.now() >= deadline) break;
     const metadata = isRecord(row.metadata) ? row.metadata : {};
     try {
       await createCompletionAssessment({
@@ -1008,9 +1064,7 @@ async function reconcileMissingCompletionAssessments(limit: number) {
         resolutionSummary:
           typeof metadata.resolutionSummary === "string"
             ? metadata.resolutionSummary
-            : row.created_from === "syncro"
-              ? row.description
-              : null,
+            : null,
         customerNextSteps:
           typeof metadata.customerNextSteps === "string"
             ? metadata.customerNextSteps
@@ -1020,9 +1074,7 @@ async function reconcileMissingCompletionAssessments(limit: number) {
             ? metadata.verificationEvidence
             : null,
         technicianUserId:
-          row.created_from === "syncro"
-            ? null
-            : Object.prototype.hasOwnProperty.call(
+          Object.prototype.hasOwnProperty.call(
                   metadata,
                   "technicianUserId",
                 )
@@ -1043,14 +1095,16 @@ async function reconcileMissingCompletionAssessments(limit: number) {
   return reconciled;
 }
 
-export async function processQueuedJevAssessments(limit = 5) {
+export async function processQueuedJevAssessments(limit = 5, timeBudgetMs = 210_000) {
   if (!hasDatabaseUrl()) return { processed: 0 };
   await ensureJevSchema();
   const sql = getSql();
-  const safeLimit = Math.max(1, Math.min(20, Math.trunc(limit)));
+  const safeLimit = Math.max(1, Math.min(100, Math.trunc(limit)));
+  const deadline = Date.now() + Math.max(1_000, Math.min(210_000, timeBudgetMs));
+  const reconciliationDeadline = Math.min(deadline, Date.now() + 30_000);
   const [triageReconciled, completionReconciled] = await Promise.all([
-    reconcileMissingTriageAssessments(safeLimit),
-    reconcileMissingCompletionAssessments(safeLimit),
+    reconcileMissingTriageAssessments(Math.min(20,safeLimit), reconciliationDeadline),
+    reconcileMissingCompletionAssessments(Math.min(20,safeLimit), reconciliationDeadline),
   ]);
   const rows = (await sql`
     select id::text
@@ -1066,7 +1120,18 @@ export async function processQueuedJevAssessments(limit = 5) {
   `) as IdRow[];
   let processed = 0;
   for (const row of rows) {
-    if (await processJevAssessment(row.id)) processed += 1;
+    if (Date.now() >= deadline) break;
+    try {
+      if (await processJevAssessment(row.id)) processed += 1;
+    } catch {
+      // One malformed ticket or transient database failure must not starve later jobs.
+      try {
+        await sql`update jev_assessments set status=case when attempt_count<3 then 'retryable' else 'failed' end,
+          last_error='processing_error',next_retry_at=now()+interval '5 minutes',updated_at=now()
+          where id=${row.id} and status='running'`;
+      } catch { /* A crashed database is recoverable through the stale-running lease. */ }
+      console.warn("jev_assessment_processing_failed", { assessmentId: row.id });
+    }
   }
   return { processed, triageReconciled, completionReconciled };
 }
@@ -1120,6 +1185,10 @@ export async function createCompletionAssessment({
   `) as CompletionTicketRow[];
   const ticket = ticketRows[0];
   if (!ticket) throw new Error("Ticket not found");
+  const resolutionTime = ticket.resolved_at ? new Date(ticket.resolved_at).getTime() : Number.NaN;
+  const completedAt = Number.isFinite(resolutionTime)
+    ? new Date(resolutionTime).toISOString()
+    : new Date().toISOString();
 
   const submissionRows = (await sql`
     insert into ticket_completion_submissions (
@@ -1181,12 +1250,15 @@ export async function createCompletionAssessment({
   const cycleStartedAt = cycleStartRows[0]?.cycle_started_at ?? ticket.created_at;
 
   let importedHistory: JevWorkHistoryEntry[] = [];
-  if (ticket.created_from === "repairshopr") {
+  if (ticket.created_from === "repairshopr" || ticket.created_from === "syncro") {
     await ensureRepairShoprWorkflowSchema();
-    const imported = await sql`select repairshopr_evidence from tickets where id=${ticketId}`;
-    const evidence = imported[0]?.repairshopr_evidence;
+    await ensureSyncroWorkflowSchema();
+    const imported = await sql`select repairshopr_evidence,syncro_evidence from tickets where id=${ticketId}`;
+    const evidence = ticket.created_from === "syncro" ? imported[0]?.syncro_evidence : imported[0]?.repairshopr_evidence;
     if (Array.isArray(evidence)) importedHistory = evidence.filter((entry): entry is JevWorkHistoryEntry =>
-      isRecord(entry) && typeof entry.at === "string" && typeof entry.action === "string" && new Date(entry.at).getTime() >= new Date(cycleStartedAt).getTime());
+      isRecord(entry) && typeof entry.at === "string" && typeof entry.action === "string" &&
+      new Date(entry.at).getTime() >= new Date(cycleStartedAt).getTime() &&
+      new Date(entry.at).getTime() <= new Date(completedAt).getTime());
   }
 
   const [commentRows, eventRows] = await Promise.all([
@@ -1199,6 +1271,7 @@ export async function createCompletionAssessment({
       from ticket_comments
       where ticket_id = ${ticketId}
         and created_at >= ${cycleStartedAt}::timestamptz
+        and created_at <= ${completedAt}::timestamptz
       order by created_at desc, id desc
       limit 120
     `,
@@ -1209,6 +1282,7 @@ export async function createCompletionAssessment({
       where ticket_id = ${ticketId}
         and completion_cycle <= ${completionCycle}
         and changed_at >= ${cycleStartedAt}::timestamptz
+        and changed_at <= ${completedAt}::timestamptz
       order by changed_at desc, id desc
       limit 120
     `,
@@ -1224,7 +1298,6 @@ export async function createCompletionAssessment({
     actor: string | null;
     evidence: string | null;
   }>;
-  const completedAt = new Date().toISOString();
   const procedureSet = completionProceduresForIssue(ticket.issue_type);
   const input: JevCompletionReviewInput = {
     ticket: {

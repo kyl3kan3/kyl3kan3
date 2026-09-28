@@ -1,6 +1,7 @@
 import { getSql, hasDatabaseUrl } from "./db";
 import { getDemoDashboardData } from "./demo-store";
 import { ensureJevSchema } from "./jev-schema";
+import { assertDemoModeAllowed } from "./runtime-mode";
 import type {
   ManagerQualityData,
   ManagerQualityRow,
@@ -112,8 +113,8 @@ function demoQualityData(windowDays: number, dbError?: string): ManagerQualityDa
 export async function getManagerQualityData(
   requestedWindowDays = 30,
 ): Promise<ManagerQualityData> {
-  const windowDays = Math.max(7, Math.min(365, Math.trunc(requestedWindowDays)));
-  if (!hasDatabaseUrl()) return demoQualityData(windowDays);
+  const windowDays = Number.isFinite(requestedWindowDays) ? Math.max(7, Math.min(365, Math.trunc(requestedWindowDays))) : 30;
+  if (!hasDatabaseUrl()) { assertDemoModeAllowed(); return demoQualityData(windowDays); }
 
   try {
     await ensureJevSchema();
@@ -127,7 +128,16 @@ export async function getManagerQualityData(
           coalesce(submission.technician_role, users.role, 'agent') as role,
           coalesce(submission.issue_type, 'unclassified') as issue_type,
           submission.ticket_id,
-          tickets.first_response_at,
+          case when tickets.first_response_at >= tickets.created_at
+            and tickets.first_response_at <= submission.submitted_at
+            and exists (
+              select 1 from jsonb_array_elements(case
+                when tickets.created_from='repairshopr' and jsonb_typeof(to_jsonb(tickets)->'repairshopr_evidence')='array' then to_jsonb(tickets)->'repairshopr_evidence'
+                when tickets.created_from='syncro' and jsonb_typeof(to_jsonb(tickets)->'syncro_evidence')='array' then to_jsonb(tickets)->'syncro_evidence'
+                else '[]'::jsonb end) entry
+              where entry->>'action'='customer-facing technician message'
+                and entry->>'at'=to_char(tickets.first_response_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
+            ) then tickets.first_response_at else null end as first_response_at,
           tickets.created_at,
           exists (
             select 1
@@ -280,15 +290,23 @@ export async function getManagerQualityData(
       0,
     );
 
+    const [uniqueHandled, exampleRows] = await Promise.all([
+      sql`select count(distinct ticket_id)::int as count from ticket_completion_submissions
+        where submitted_at>=now()-(${windowDays}||' days')::interval and technician_user_id is not null`,
+      sql`select t.id::text as ticket_id,t.title,s.technician_name,s.issue_type,a.status,a.overall_score,
+        a.missing_evidence_count,a.completed_at::text
+        from ticket_completion_submissions s join tickets t on t.id=s.ticket_id
+        join lateral (select * from jev_assessments where completion_submission_id=s.id
+          and kind='completion_review' order by created_at desc limit 1) a on true
+        where s.submitted_at>=now()-(${windowDays}||' days')::interval
+        order by s.submitted_at desc limit 50`,
+    ]);
     return {
       source: "database",
       refreshedAt: new Date().toISOString(),
       windowDays,
       summary: {
-        handledTickets: mappedRows.reduce(
-          (sum, row) => sum + row.handledTickets,
-          0,
-        ),
+        handledTickets: Number(uniqueHandled[0]?.count ?? 0),
         reviewedTickets: mappedRows.reduce(
           (sum, row) => sum + row.reviewedTickets,
           0,
@@ -302,8 +320,12 @@ export async function getManagerQualityData(
             : null,
       },
       rows: mappedRows,
+      examples: exampleRows.map(row => ({ ticketId: String(row.ticket_id), ticketTitle: String(row.title),
+        technician: row.technician_name ?? null, issueType: row.issue_type ?? null, status: String(row.status),
+        overallScore: row.status === "succeeded" ? nullableNumber(row.overall_score) : null, missingEvidence: toNumber(row.missing_evidence_count),
+        completedAt: row.completed_at ?? null })),
     };
-  } catch (error) {
+  } catch {
     return {
       source: "database",
       refreshedAt: new Date().toISOString(),
@@ -315,8 +337,7 @@ export async function getManagerQualityData(
         evidenceCoverage: null,
       },
       rows: [],
-      dbError:
-        error instanceof Error ? error.message : "Unable to load quality metrics",
+      dbError: "Unable to load quality metrics. Check the database connection and retry.",
     };
   }
 }
